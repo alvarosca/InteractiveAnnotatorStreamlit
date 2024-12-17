@@ -4,4 +4,4 @@ streamlit-image-coordinates
 matplotlib
 pandas
 numpy
-cv2
+# cv2

@@ -4,7 +4,7 @@ import io
 import csv
 from PIL import Image
 import numpy as np
-import cv2
+# import cv2
 
 overlap = 0.5
 
@@ -104,8 +104,8 @@ def draw_points_on_image(image, points, labels,
             else:
                 color = (0, 0, 255)  # Blue for No importante
 
-            # Draw an unfilled circle at the specified coordinates using OpenCV
-            cv2.circle(image, (x, y), 3, color, 2)  # Radius of 6, unfilled circle with thickness 2    
+            # # Draw an unfilled circle at the specified coordinates using OpenCV
+            # cv2.circle(image, (x, y), 3, color, 2)  # Radius of 6, unfilled circle with thickness 2    
 
     return image
 
