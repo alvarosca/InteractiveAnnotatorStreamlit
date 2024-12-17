@@ -311,8 +311,6 @@ if uploaded_file is not None:
                         st.session_state['csv_data'] = csv_data
                         st.session_state['report_data'] = report_data
 
-                        st.experimental_rerun()
-
                 elif action is actions[1]:
                     
                     point_found = False
@@ -363,8 +361,6 @@ if uploaded_file is not None:
                         st.session_state['csv_data'] = csv_data
                         st.session_state['report_data'] = report_data
 
-
-                        st.experimental_rerun()
 
         st.session_state['previous_value'] = value
 
