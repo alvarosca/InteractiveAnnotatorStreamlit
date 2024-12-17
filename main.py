@@ -2,7 +2,7 @@ import streamlit as st
 from streamlit_image_coordinates import streamlit_image_coordinates
 import io
 import csv
-from PIL import Image
+from PIL import Image, ImageDraw
 import numpy as np
 # import cv2
 
@@ -83,6 +83,12 @@ def draw_points_on_image(image, points, labels,
                          current_patch_x_coord, 
                          current_patch_y_coord):
 
+    # Convert NumPy array (H, W, C) to PIL Image
+    image_pil = Image.fromarray(image)
+
+    # Create a draw object to draw on the image
+    draw = ImageDraw.Draw(image_pil)
+
     # Loop through all points and labels
     for point, label in zip(points, labels):
         x, y = point
@@ -90,22 +96,26 @@ def draw_points_on_image(image, points, labels,
         y -= current_patch_y_coord
         
         # Ensure the point is within the bounds of the patch
-        if ( x >= 0 and y >= 0 and x < patch_width and y < patch_height ):
+        if (x >= 0 and y >= 0 and x < patch_width and y < patch_height):
 
             # Ensure x and y are integers
             x = int(x)
             y = int(y)
             
-            # Determine the color based on the label
+            # Determine the color based on the label (RGB format for PIL)
             if label == 0:
-                color = (255, 0, 0)  # Red for Positivo (BGR format for OpenCV)
+                color = (255, 0, 0)  # Red for Positivo
             elif label == 1:
                 color = (0, 255, 0)  # Green for Negativo
             else:
                 color = (0, 0, 255)  # Blue for No importante
 
-            # # Draw an unfilled circle at the specified coordinates using OpenCV
-            # cv2.circle(image, (x, y), 3, color, 2)  # Radius of 6, unfilled circle with thickness 2    
+            # Draw an unfilled circle at the specified coordinates
+            radius = 4
+            draw.ellipse((x - radius, y - radius, x + radius, y + radius), outline=color, width=3)
+
+    # Convert PIL image back to NumPy array (H, W, C)
+    image = np.array(image_pil)
 
     return image
 
