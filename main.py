@@ -37,7 +37,7 @@ if 'report_data' not in st.session_state:
     st.session_state['report_data'] = b""  # Use empty binary to avoid type errors
 
 
-def update_patch_data(session_state, scale):
+def update_patch_data(session_state):
 
     all_points = session_state['all_points'] # Set to track unique point
     all_labels = session_state['all_labels'] # Dictionary to track labels for each unique point
@@ -49,11 +49,6 @@ def update_patch_data(session_state, scale):
     labels = []
 
     for point, label in zip(all_points, all_labels):
-        x, y = point
-
-        x *= scale[0]
-        y *= scale[1]
-
         points.append(point)
         labels.append(label)
 
@@ -106,7 +101,7 @@ def update_results(session_state, file_name):
     session_state['report_data'] = report_data
 
 
-def update_annotations(new_labels, session_state, scale):
+def update_annotations(new_labels, session_state):
 
     all_points = session_state['all_points'] # Set to track unique point
     all_labels = session_state['all_labels'] # Dictionary to track labels for each unique point
@@ -117,8 +112,8 @@ def update_annotations(new_labels, session_state, scale):
     for v in new_labels:
         x, y = v['point']
 
-        x = int(x)//scale[0]
-        y = int(y)//scale[1]
+        x = int(x)
+        y = int(y)
 
         label_id = v['label_id']
         patch_points.append([x, y])
@@ -158,13 +153,22 @@ def update_annotations(new_labels, session_state, scale):
 
 def main():
 
-    display_size = [1024, 1024]
+    # Image upload
+    uploaded_file = st.file_uploader("Subir imagen ", type=["jpg", "jpeg", "png"])
+
+    st.sidebar.header("Seleccionar zoom")
+    with st.sidebar:
+        zoom = st.number_input(
+            "Zoom", 
+            min_value=1, 
+            max_value=4, 
+            value=1, 
+            step=1
+        )            
 
     # Sidebar content
-    st.sidebar.title("Anotación de imágenes")
-
+    st.sidebar.header("Anotación de imágenes")
     with st.sidebar:
-
         col1, col2 = st.columns([2, 2])
         with col1:
             st.session_state['action'] = st.selectbox("Acción:", actions)
@@ -172,9 +176,7 @@ def main():
         with col2:
             st.session_state['label'] = st.selectbox("Clase:", label_list)
 
-    # Image upload
-    uploaded_file = st.file_uploader("Subir imagen", type=["jpg", "jpeg", "png"])
-
+    
     # Check if an image is uploaded
     if uploaded_file is not None:
 
@@ -182,18 +184,10 @@ def main():
 
         # Open the uploaded image using PIL
         image = Image.open(uploaded_file)
-
-        image_size = image.size
-
-        scale  = [ display_size[0]//image_size[0],
-                   display_size[1]//image_size[1]] 
-
-        # Resize the image to 1024x1024
-        image = image.resize(display_size)
-
+        width, height = image.size
         image.save(uploaded_file.name)
         
-        update_patch_data(st.session_state, scale)
+        update_patch_data(st.session_state)
 
         img_path = uploaded_file.name
 
@@ -209,18 +203,19 @@ def main():
             label_list=label_list,
             points=st.session_state['points'],
             labels=st.session_state['labels'],
-            width = 2048,
-            height = 2048,
+            width = width,
+            height = height,
             use_space=True,
             key=img_path,
             mode = mode,
             label = st.session_state['label'],
-            point_width=5
+            point_width=5,
+            zoom=zoom,
         )
         
         # Update points and labels in session state if any changes are made
         if new_labels is not None:
-            update_annotations(new_labels, st.session_state, scale)
+            update_annotations(new_labels, st.session_state)
             update_results(st.session_state, uploaded_file_name)
 
         st.sidebar.header("Resultados")

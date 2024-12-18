@@ -18,14 +18,10 @@ export interface PythonArgs {
   color_map: any,
   point_width: number,
   use_space: boolean,
-  mode: string,  // <-- Added "mode" to the Python arguments
-  label: string  // <-- Added "label" to the Python arguments
+  mode: string,   // <-- Added "mode" to the Python arguments
+  label: string,  // <-- Added "label" to the Python arguments
+  zoom: number
 }
-
-/**
- * This is a React-based component template. The `render()` function is called
- * automatically when your component should be re-rendered.
- */
 const PointDet = ({ args, theme }: ComponentProps) => {
   const {
     image_url,
@@ -36,7 +32,8 @@ const PointDet = ({ args, theme }: ComponentProps) => {
     point_width,
     use_space,
     mode,  // <-- Extract "mode" from the args
-    label  // <-- Extract "label" from the args
+    label,  // <-- Extract "label" from the args
+    zoom
   }: PythonArgs = args
 
   const params = new URLSearchParams(window.location.search);
@@ -53,12 +50,13 @@ const PointDet = ({ args, theme }: ComponentProps) => {
       }
     })
   );
+
   const [selectedId, setSelectedId] = React.useState<string | null>(null);
 
   const [scale, setScale] = useState(1.0)
   useEffect(() => {
     const resizeCanvas = () => {
-      const scale_ratio = window.innerWidth * 1 / image_size[0]
+      const scale_ratio = window.innerWidth / image_size[0]
       setScale(Math.min(scale_ratio, 1.0))
       Streamlit.setFrameHeight(image_size[1] * Math.min(scale_ratio, 1.0))
     }
@@ -102,24 +100,32 @@ const PointDet = ({ args, theme }: ComponentProps) => {
     <ChakraProvider>
       <ThemeSwitcher theme={theme}>
         <Center>
-          <HStack>
-            <Box width="100%">
+          <HStack width="100%" height="100%">
+            <Box 
+              width="100%" 
+              style={{
+                overflow: 'auto',  // Scrollbars enabled if content overflows
+                maxWidth: '100%',  // Restrict width to avoid unnecessary scroll
+                maxHeight: '100vh', // Set the max height relative to the viewport
+                position: 'relative' // Needed for proper overflow control
+              }}
+            >
               <PointCanvas
                 pointsInfo={pointsInfo}
-                mode={mode}  // <-- Use the mode directly from args
+                mode={mode} 
                 selectedId={selectedId}
                 scale={scale}
                 setSelectedId={setSelectedId}
                 setPointsInfo={setPointsInfo}
                 setLabel={() => {}}
                 color_map={color_map}
-                label={label}  // <-- Use the label directly from args
+                label={label} 
                 image={image}
                 image_size={image_size}
                 strokeWidth={point_width}
+                zoom={zoom}
               />
             </Box>
-            <Spacer />
           </HStack>
         </Center>
       </ThemeSwitcher>
