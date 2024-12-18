@@ -6,7 +6,6 @@ from PIL import Image
 import numpy as np
 import pandas as pd
 
-
 # Define label list
 label_list = ['Positivo', 'Negativo', 'No importante']
 actions = ['Agregar', 'Borrar']
