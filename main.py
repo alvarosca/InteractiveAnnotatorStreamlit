@@ -160,8 +160,19 @@ def main():
 
     display_size = [1024, 1024]
 
+    st.sidebar.header("Seleccionar zoom")
+    with st.sidebar:
+        zoom = st.number_input(
+            "Zoom", 
+            min_value=1, 
+            max_value=4, 
+            value=1, 
+            step=1
+        )            
+
+
     # Sidebar content
-    st.sidebar.title("Anotación de imágenes")
+    st.sidebar.header("Anotación de imágenes")
 
     with st.sidebar:
 
@@ -171,6 +182,9 @@ def main():
 
         with col2:
             st.session_state['label'] = st.selectbox("Clase:", label_list)
+
+
+
 
     # Image upload
     uploaded_file = st.file_uploader("Subir imagen", type=["jpg", "jpeg", "png"])
@@ -183,13 +197,11 @@ def main():
         # Open the uploaded image using PIL
         image = Image.open(uploaded_file)
 
-        image_size = image.size
 
-        scale  = [ display_size[0]//image_size[0],
-                   display_size[1]//image_size[1]] 
+        width, height = image.size
 
-        # Resize the image to 1024x1024
-        image = image.resize(display_size)
+        scale  = [ 1,
+                   1] 
 
         image.save(uploaded_file.name)
         
@@ -209,13 +221,14 @@ def main():
             label_list=label_list,
             points=st.session_state['points'],
             labels=st.session_state['labels'],
-            width = 2048,
-            height = 2048,
+            width = width,
+            height = height,
             use_space=True,
             key=img_path,
             mode = mode,
             label = st.session_state['label'],
-            point_width=5
+            point_width=5,
+            zoom=zoom,
         )
         
         # Update points and labels in session state if any changes are made

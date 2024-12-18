@@ -16,7 +16,9 @@ export interface PointCanvasProps {
   image_size: number[],
   image: any,
   strokeWidth: number
+  zoom: number
 }
+
 const PointCanvas = (props: PointCanvasProps) => {
   const {
     pointsInfo,
@@ -30,26 +32,25 @@ const PointCanvas = (props: PointCanvasProps) => {
     label,
     image_size,
     image,
-    strokeWidth
+    strokeWidth,
+    zoom
   }: PointCanvasProps = props
+  
   const checkDeselect = (e: any) => {
-    console.log('DOWN')
     if (!(e.target instanceof Konva.Circle)) {
-      if (selectedId === null) {
-        if (mode === 'Transform') {
-          const pointer = e.target.getStage().getPointerPosition()
-          const points = pointsInfo.slice();
-          const new_id = Date.now().toString()
-          points.push({
-            x: pointer.x / scale,
-            y: pointer.y / scale,
-            label: label,
-            stroke: color_map[label],
-            id: new_id
-          })
-          setPointsInfo(points);
-          setSelectedId(new_id);
-        }
+      if (selectedId === null && mode === 'Transform') {
+        const pointer = e.target.getStage().getPointerPosition()
+        const points = pointsInfo.slice();
+        const new_id = Date.now().toString()
+        points.push({
+          x: pointer.x / (scale*zoom),
+          y: pointer.y / (scale*zoom),
+          label: label,
+          stroke: color_map[label],
+          id: new_id
+        })
+        setPointsInfo(points);
+        setSelectedId(new_id);
       } else {
         setSelectedId(null);
       }
@@ -70,49 +71,54 @@ const PointCanvas = (props: PointCanvasProps) => {
         setPointsInfo(points)
       }
     }
-    console.log(pointsInfo)
   }, [pointsInfo, image_size])
+
   return (
-    <Stage width={image_size[0] * scale} height={image_size[1] * scale}
-      onMouseDown={checkDeselect}>
-      <Layer>
-        <Image image={image} scaleX={scale} scaleY={scale} />
-      </Layer>
-      <Layer>
-        {pointsInfo.map((point, i) => {
-          return (
-            <Point
-              key={i}
-              rectProps={point}
-              scale={scale}
-              strokeWidth={strokeWidth}
-              isSelected={mode === 'Transform' && point.id === selectedId}
-              onClick={() => {
-                if (mode === 'Transform') {
-                  setSelectedId(point.id);
+    <div>
+      <Stage 
+        width={image_size[0] * (scale*zoom)}
+        height={image_size[1] * (scale*zoom)}
+        onMouseDown={checkDeselect}
+      >
+        <Layer>
+          <Image image={image} scaleX={(scale*zoom)} scaleY={(scale*zoom)} />
+        </Layer>
+        <Layer>
+          {pointsInfo.map((point, i) => {
+            return (
+              <Point
+                key={i}
+                rectProps={point}
+                scale={(scale*zoom)}
+                strokeWidth={strokeWidth}
+                isSelected={mode === 'Transform' && point.id === selectedId}
+                onClick={() => {
+                  if (mode === 'Transform') {
+                    setSelectedId(point.id);
+                    const points = pointsInfo.slice();
+                    const lastIndex = points.length - 1;
+                    const lastItem = points[lastIndex];
+                    points[lastIndex] = points[i];
+                    points[i] = lastItem;
+                    setPointsInfo(points);
+                    setLabel(point.label)
+                  } else if (mode === 'Del') {
+                    const points = pointsInfo.slice();
+                    setPointsInfo(points.filter((element) => element.id !== point.id));
+                  }
+                }}
+                onChange={(newAttrs: any) => {
                   const points = pointsInfo.slice();
-                  const lastIndex = points.length - 1;
-                  const lastItem = points[lastIndex];
-                  points[lastIndex] = points[i];
-                  points[i] = lastItem;
+                  points[i] = newAttrs;
                   setPointsInfo(points);
-                  setLabel(point.label)
-                } else if (mode === 'Del') {
-                  const points = pointsInfo.slice();
-                  setPointsInfo(points.filter((element) => element.id !== point.id));
-                }
-              }}
-              onChange={(newAttrs: any) => {
-                const points = pointsInfo.slice();
-                points[i] = newAttrs;
-                setPointsInfo(points);
-              }}
-            />
-          );
-        })}
-      </Layer></Stage>
+                }}
+              />
+            );
+          })}
+        </Layer>
+      </Stage>
+    </div>
   );
 };
-
 
 export default PointCanvas;
