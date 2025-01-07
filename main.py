@@ -179,6 +179,16 @@ def main():
     # Check if an image is uploaded
     if uploaded_file is not None:
 
+        if 'uploaded_file_name' not in st.session_state or st.session_state['uploaded_file_name'] != uploaded_file.name:
+            # New file uploaded, reset all relevant session state variables
+            st.session_state['all_points'] = set()
+            st.session_state['all_labels'] = {}
+            st.session_state['points'] = []
+            st.session_state['labels'] = []
+            st.session_state['csv_data'] = b""
+            st.session_state['report_data'] = b""
+            st.session_state['uploaded_file_name'] = uploaded_file.name  # Store the current file name
+
         uploaded_file_name = uploaded_file.name[:-4]
 
         # Open the uploaded image using PIL
