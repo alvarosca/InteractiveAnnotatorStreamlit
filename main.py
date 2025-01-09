@@ -307,7 +307,7 @@ def main():
                 label="Descargar imagen anotada (png)",
                 data=st.session_state['ann_image'],
                 file_name=f'{uploaded_file_name}_annotated.png',
-                mime='text/plain'
+                mime='image/png'
             )
 
 
