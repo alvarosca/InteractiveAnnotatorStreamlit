@@ -3,9 +3,12 @@ from streamlit_image_annotation import pointdet
 import io
 import csv
 from PIL import Image
+from PIL import Image, ImageDraw
 import numpy as np
 import pandas as pd
 
+# We want the wide mode to be set by default
+st.set_page_config(page_title=None, page_icon=None, layout="wide", initial_sidebar_state="auto", menu_items=None)
 
 # Define label list
 label_list = ['Positivo', 'Negativo', 'No importante']
@@ -31,10 +34,11 @@ if 'labels' not in st.session_state:
 
 # Initialize session state for csv and report data
 if 'csv_data' not in st.session_state:
-    st.session_state['csv_data'] = b""  # Use empty binary to avoid type errors
-
+    st.session_state['csv_data'] = b""
 if 'report_data' not in st.session_state:
-    st.session_state['report_data'] = b""  # Use empty binary to avoid type errors
+    st.session_state['report_data'] = b""
+if 'ann_image' not in st.session_state:
+    st.session_state['ann_image'] = b"" 
 
 
 def update_patch_data(session_state):
@@ -150,6 +154,56 @@ def update_annotations(new_labels, session_state):
     session_state['all_points'] = all_points
     session_state['all_labels'] = all_labels
 
+def update_ann_image(session_state, image):
+    """
+    Overlays points on the image with colors corresponding to their labels 
+    and stores the result in the session state for display and download.
+
+    Args:
+        session_state: dict containing `all_points` and `all_labels`.
+            - `all_points`: List of tuples representing points (x, y).
+            - `all_labels`: Dictionary mapping points to labels.
+        image: PIL.Image object representing the base image.
+    """
+
+    # Extract points and labels
+    all_points = session_state['all_points']  # List of tuples [(x1, y1), (x2, y2), ...]
+    all_labels = session_state['all_labels']  # Dict: {(x1, y1): "label1", (x2, y2): "label2", ...}
+
+    # Define colors for each label
+    label_colors = {
+        0: (255, 0, 0),  # Red
+        1: (0, 255, 0),  # Green
+        2: (0, 0, 255),  # Blue
+        # Add more labels and their colors as needed
+    }
+
+    # Create a drawable image
+    ann_image = image.copy()
+    draw = ImageDraw.Draw(ann_image)
+
+    # Draw each point with the corresponding color
+    point_radius = 7.5  # Radius of each point
+    for point in all_points:
+        x, y = point
+        label = all_labels.get(point, "default")  # Get the label for the point
+        color = label_colors.get(label, (255, 255, 255))  # Default to white if label not found
+
+        # Draw the point as a filled circle
+        draw.ellipse(
+            [(x - point_radius, y - point_radius), (x + point_radius, y + point_radius)],
+            outline=color,
+            width=5,
+        )
+
+    # Convert the annotated image to a downloadable JPEG format
+    image_buffer = io.BytesIO()
+    ann_image.save(image_buffer, format="PNG")
+    image_buffer.seek(0)
+
+    # Store the annotated image
+    session_state['ann_image'] = image_buffer
+
 
 def main():
 
@@ -189,6 +243,7 @@ def main():
             st.session_state['csv_data'] = b""
             st.session_state['report_data'] = b""
             st.session_state['uploaded_file_name'] = uploaded_file.name  # Store the current file name
+            st.session_state['ann_image'] = b"" 
 
         uploaded_file_name = uploaded_file.name[:-4]
 
@@ -227,6 +282,7 @@ def main():
         if new_labels is not None:
             update_annotations(new_labels, st.session_state)
             update_results(st.session_state, uploaded_file_name)
+            update_ann_image(st.session_state, image)
 
         st.sidebar.header("Resultados")
         # Sidebar buttons
@@ -241,9 +297,16 @@ def main():
 
             # **2nd Download Button** - Annotation Report
             st.download_button(
-                label="Descargar Reporte (txt)",
+                label="Descargar reporte (txt)",
                 data=st.session_state['report_data'],
                 file_name=f'{uploaded_file_name}.txt',
+                mime='text/plain'
+            )
+
+            st.download_button(
+                label="Descargar imagen anotada (png)",
+                data=st.session_state['ann_image'],
+                file_name=f'{uploaded_file_name}_annotated.png',
                 mime='text/plain'
             )
 
