@@ -6,6 +6,12 @@ from PIL import Image
 from PIL import Image, ImageDraw
 import numpy as np
 import pandas as pd
+import os
+
+# Folders
+image_dir  = "./images"
+ann_dir    = "./annotations"
+report_dir = "./reports"
 
 # We want the wide mode to be set by default
 st.set_page_config(page_title=None, page_icon=None, layout="wide", initial_sidebar_state="auto", menu_items=None)
@@ -14,37 +20,35 @@ st.set_page_config(page_title=None, page_icon=None, layout="wide", initial_sideb
 label_list = ['Positivo', 'Negativo', 'No importante']
 actions = ['Agregar', 'Borrar']
 
-if 'label' not in st.session_state:
-    st.session_state['label'] = 0  # Store selected label
+def init_session(session_state):
 
-if 'action' not in st.session_state:
-    st.session_state['action'] = 0  # Store selected action
+    session_state['label'] = 0  # Store selected label
+    session_state['action'] = 0  # Store selected action
+    session_state['all_points'] = set()  # Set to track unique point
+    session_state['all_labels'] = {}  # Dictionary to track labels for each unique point
+    session_state['points'] = []
+    session_state['labels'] = []
+    session_state['csv_data'] = b""
+    session_state['report_data'] = b""
+    session_state['ann_image'] = b"" 
 
-if 'all_points' not in st.session_state:
-    st.session_state['all_points'] = set()  # Set to track unique point
+def recover_session(session_state, all_points, all_labels, image, file_name):
 
-if 'all_labels' not in st.session_state:
-    st.session_state['all_labels'] = {}  # Dictionary to track labels for each unique point
+    session_state['label'] = 0 
+    session_state['action'] = 0
+    session_state['all_points'] = all_points 
+    session_state['all_labels'] = all_labels 
 
-if 'points' not in st.session_state:
-    st.session_state['points'] = []
+    update_patch_data(session_state)
+    update_results(session_state, file_name)
+    update_ann_image(session_state, image)
 
-if 'labels' not in st.session_state:
-    st.session_state['labels'] = []
-
-# Initialize session state for csv and report data
-if 'csv_data' not in st.session_state:
-    st.session_state['csv_data'] = b""
-if 'report_data' not in st.session_state:
-    st.session_state['report_data'] = b""
-if 'ann_image' not in st.session_state:
-    st.session_state['ann_image'] = b"" 
 
 
 def update_patch_data(session_state):
 
-    all_points = session_state['all_points'] # Set to track unique point
-    all_labels = session_state['all_labels'] # Dictionary to track labels for each unique point
+    all_points = session_state['all_points']
+    all_labels = session_state['all_labels']
 
     all_points = list(all_points)
     all_labels = [all_labels[point] for point in all_points]
@@ -78,6 +82,12 @@ def update_results(session_state, file_name):
     # Convert CSV buffer to downloadable file
     csv_data = csv_buffer.getvalue().encode('utf-8')
 
+    # Save CSV data to file
+    csv_data = csv_buffer.getvalue()
+    csv_filename = f"{ann_dir}/{file_name}.csv"
+    with open(csv_filename, "w", encoding="utf-8") as csv_file:
+        csv_file.write(csv_data)
+
     # **Generate the Annotation Report**
     num_positive = all_labels.count(0)
     num_negative = all_labels.count(1)
@@ -101,8 +111,14 @@ def update_results(session_state, file_name):
     report_buffer.write(report_content)
     report_data = report_buffer.getvalue()
 
+    # Save report to file
+    report_filename = f"{report_dir}/{file_name}.txt"
+    with open(report_filename, "w", encoding="utf-8") as report_file:
+        report_file.write(report_content)
+
     session_state['csv_data'] = csv_data
     session_state['report_data'] = report_data
+
 
 
 def update_annotations(new_labels, session_state):
@@ -205,6 +221,69 @@ def update_ann_image(session_state, image):
     session_state['ann_image'] = image_buffer
 
 
+
+def check_files(uploaded_file_name, folder_path="./images"):
+    """
+    Checks if a file (without its extension) exists in the specified folder.
+
+    Args:
+        uploaded_file_name (str): The name of the file to check (without extension).
+        folder_path (str): The path of the folder to search in. Default is "/path/to/your/folder".
+
+    Returns:
+        bool: True if the file (ignoring extensions) exists, False otherwise.
+    """
+    # Normalize the file name to search (strip extension if any)
+    uploaded_file_base = os.path.splitext(uploaded_file_name)[0]
+
+    # List all files in the folder without their extensions
+    file_names_in_folder = [
+        os.path.splitext(f)[0]
+        for f in os.listdir(folder_path)
+        if os.path.isfile(os.path.join(folder_path, f))
+    ]
+
+    # Check if the file exists (case-sensitive)
+    return uploaded_file_base in file_names_in_folder
+
+
+def read_results_from_csv(csv_filename):
+    """
+    Reads the contents of a CSV file created by the `update_results` function
+    and extracts all_points and all_labels.
+
+    Args:
+        csv_filename (str): Path to the CSV file to read.
+
+    Returns:
+        tuple: A tuple containing:
+            - all_points (list of tuples): List of points [(x1, y1), (x2, y2), ...].
+            - all_labels (list): List of labels corresponding to each point.
+    """
+    all_points = set()
+    all_labels = {}
+
+    try:
+        with open(csv_filename, mode="r", encoding="utf-8") as csv_file:
+            csv_reader = csv.DictReader(csv_file)  # Read CSV with headers
+            for row in csv_reader:
+                # Extract X, Y, and Label, and reconstruct all_points and all_labels
+                x = int(row["X"])
+                y = int(row["Y"])
+                label_id = label_list.index(row["Label"])
+                point_tuple = (x, y)
+
+                all_points.add(point_tuple)
+                all_labels[point_tuple] = label_id  # Store the label for this point
+
+    except FileNotFoundError:
+        print(f"Error: File '{csv_filename}' not found.")
+    except Exception as e:
+        print(f"Error reading the file: {e}")
+    
+    return all_points, all_labels
+
+
 def main():
 
     # Image upload
@@ -235,26 +314,39 @@ def main():
     if uploaded_file is not None:
 
         if 'uploaded_file_name' not in st.session_state or st.session_state['uploaded_file_name'] != uploaded_file.name:
-            # New file uploaded, reset all relevant session state variables
-            st.session_state['all_points'] = set()
-            st.session_state['all_labels'] = {}
-            st.session_state['points'] = []
-            st.session_state['labels'] = []
-            st.session_state['csv_data'] = b""
-            st.session_state['report_data'] = b""
+
             st.session_state['uploaded_file_name'] = uploaded_file.name  # Store the current file name
-            st.session_state['ann_image'] = b"" 
+
+            uploaded_file_name = uploaded_file.name[:-4]
+
+            result = check_files(uploaded_file_name)
+
+            # Open the uploaded image using PIL
+            image = Image.open(uploaded_file)
+            width, height = image.size
+            img_path = f"{image_dir}/{uploaded_file.name}"
+
+            if result:
+                csv_file_name = f"{ann_dir}/{uploaded_file_name}.csv"
+                all_points, all_labels = read_results_from_csv(csv_file_name)
+                recover_session(st.session_state, all_points, all_labels, image, uploaded_file_name)
+
+            else:
+                image.save(img_path)
+                init_session(st.session_state)
+
 
         uploaded_file_name = uploaded_file.name[:-4]
 
         # Open the uploaded image using PIL
         image = Image.open(uploaded_file)
         width, height = image.size
-        image.save(uploaded_file.name)
-        
+        img_path = f"{image_dir}/{uploaded_file.name}"
+        image.save(img_path)
+
+
         update_patch_data(st.session_state)
 
-        img_path = uploaded_file.name
 
         action = st.session_state['action']
         if action == actions[1]:
