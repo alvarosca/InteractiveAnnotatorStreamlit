@@ -20,10 +20,9 @@ st.set_page_config(page_title=None, page_icon=None, layout="wide", initial_sideb
 label_list = ['Positivo', 'Negativo', 'No importante']
 actions = ['Agregar', 'Borrar']
 
+
 def init_session(session_state):
 
-    session_state['label'] = 0  # Store selected label
-    session_state['action'] = 0  # Store selected action
     session_state['all_points'] = set()  # Set to track unique point
     session_state['all_labels'] = {}  # Dictionary to track labels for each unique point
     session_state['points'] = []
@@ -32,17 +31,15 @@ def init_session(session_state):
     session_state['report_data'] = b""
     session_state['ann_image'] = b"" 
 
+
 def recover_session(session_state, all_points, all_labels, image, file_name):
 
-    session_state['label'] = 0 
-    session_state['action'] = 0
     session_state['all_points'] = all_points 
     session_state['all_labels'] = all_labels 
 
     update_patch_data(session_state)
     update_results(session_state, file_name)
     update_ann_image(session_state, image)
-
 
 
 def update_patch_data(session_state):
@@ -120,7 +117,6 @@ def update_results(session_state, file_name):
     session_state['report_data'] = report_data
 
 
-
 def update_annotations(new_labels, session_state):
 
     all_points = session_state['all_points'] # Set to track unique point
@@ -169,6 +165,7 @@ def update_annotations(new_labels, session_state):
 
     session_state['all_points'] = all_points
     session_state['all_labels'] = all_labels
+
 
 def update_ann_image(session_state, image):
     """
@@ -221,20 +218,19 @@ def update_ann_image(session_state, image):
     session_state['ann_image'] = image_buffer
 
 
-
-def check_files(uploaded_file_name, folder_path="./images"):
+def check_files(image_file_name, folder_path="./images"):
     """
     Checks if a file (without its extension) exists in the specified folder.
 
     Args:
-        uploaded_file_name (str): The name of the file to check (without extension).
+        image_file_name (str): The name of the file to check (without extension).
         folder_path (str): The path of the folder to search in. Default is "/path/to/your/folder".
 
     Returns:
         bool: True if the file (ignoring extensions) exists, False otherwise.
     """
     # Normalize the file name to search (strip extension if any)
-    uploaded_file_base = os.path.splitext(uploaded_file_name)[0]
+    image_file_base = os.path.splitext(image_file_name)[0]
 
     # List all files in the folder without their extensions
     file_names_in_folder = [
@@ -244,7 +240,7 @@ def check_files(uploaded_file_name, folder_path="./images"):
     ]
 
     # Check if the file exists (case-sensitive)
-    return uploaded_file_base in file_names_in_folder
+    return image_file_base in file_names_in_folder
 
 
 def read_results_from_csv(csv_filename):
@@ -284,10 +280,52 @@ def read_results_from_csv(csv_filename):
     return all_points, all_labels
 
 
+def check_latest_session_log(log_path = "latest_sesssion.log"):
+    try:
+        with open(log_path, 'r', encoding='utf-8') as file:
+            contents = file.read()
+
+        return contents
+
+    except FileNotFoundError:
+        return "NoImage"
+    except Exception as e:
+        return "NoImage"
+
+
+def store_latest_session_log(file_name, log_path = "latest_sesssion.log"):
+    try:
+        with open(log_path, 'w', encoding='utf-8') as file:
+            file.write(file_name)
+    except Exception as e:
+        print(f"An error occurred: {e}")
+
+
 def main():
+
+    image_file_name = None
 
     # Image upload
     uploaded_file = st.file_uploader("Subir imagen ", type=["jpg", "jpeg", "png"])
+
+    if uploaded_file is not None:
+        image_file_name = uploaded_file.name
+        image = Image.open(uploaded_file)
+        width, height = image.size
+        img_path = f"{image_dir}/{image_file_name}"
+
+    else:
+        # Check latest image
+        latest_image = check_latest_session_log()
+        result = check_files(latest_image)
+
+        if result:
+            # Recover the latest image
+            image_file_name = latest_image
+            image = Image.open(f"{image_dir}/{latest_image}")    
+            width, height = image.size
+            img_path = f"{image_dir}/{image_file_name}"
+
 
     st.sidebar.header("Seleccionar zoom")
     with st.sidebar:
@@ -310,43 +348,38 @@ def main():
             st.session_state['label'] = st.selectbox("Clase:", label_list)
 
     
-    # Check if an image is uploaded
-    if uploaded_file is not None:
+    if image_file_name is not None:
 
-        if 'uploaded_file_name' not in st.session_state or st.session_state['uploaded_file_name'] != uploaded_file.name:
+        # Check if a new image is uploaded
+        if 'image_file_name' not in st.session_state or st.session_state['image_file_name'] != image_file_name:
 
-            st.session_state['uploaded_file_name'] = uploaded_file.name  # Store the current file name
+            st.session_state['image_file_name'] = image_file_name
 
-            uploaded_file_name = uploaded_file.name[:-4]
+            result = check_files(image_file_name)
 
-            result = check_files(uploaded_file_name)
-
-            # Open the uploaded image using PIL
-            image = Image.open(uploaded_file)
-            width, height = image.size
-            img_path = f"{image_dir}/{uploaded_file.name}"
-
-            if result:
-                csv_file_name = f"{ann_dir}/{uploaded_file_name}.csv"
+            if result: # Recover previous annotations
+                csv_file_name = f"{ann_dir}/{image_file_name[:-4]}.csv"
                 all_points, all_labels = read_results_from_csv(csv_file_name)
-                recover_session(st.session_state, all_points, all_labels, image, uploaded_file_name)
+                recover_session(st.session_state, all_points, all_labels, image, image_file_name[:-4])
 
             else:
                 image.save(img_path)
                 init_session(st.session_state)
 
+            store_latest_session_log(image_file_name)
 
-        uploaded_file_name = uploaded_file.name[:-4]
+        # Check if user got disconnected
+        try:
+            # Attempt to get session data
+            all_points = st.session_state["all_points"]
 
-        # Open the uploaded image using PIL
-        image = Image.open(uploaded_file)
-        width, height = image.size
-        img_path = f"{image_dir}/{uploaded_file.name}"
-        image.save(img_path)
+        except KeyError:
+            csv_file_name = f"{ann_dir}/{image_file_name[:-4]}.csv"
+            all_points, all_labels = read_results_from_csv(csv_file_name)
+            recover_session(st.session_state, all_points, all_labels, image, image_file_name[:-4])
 
 
         update_patch_data(st.session_state)
-
 
         action = st.session_state['action']
         if action == actions[1]:
@@ -373,7 +406,7 @@ def main():
         # Update points and labels in session state if any changes are made
         if new_labels is not None:
             update_annotations(new_labels, st.session_state)
-            update_results(st.session_state, uploaded_file_name)
+            update_results(st.session_state, image_file_name[:-4])
             update_ann_image(st.session_state, image)
 
         st.sidebar.header("Resultados")
@@ -383,7 +416,7 @@ def main():
             st.download_button(
                 label="Descargar anotaciones (CSV)",
                 data=st.session_state['csv_data'],
-                file_name=f"{uploaded_file_name}.csv",
+                file_name=f"{image_file_name[:-4]}.csv",
                 mime="text/csv"
             )
 
@@ -391,14 +424,14 @@ def main():
             st.download_button(
                 label="Descargar reporte (txt)",
                 data=st.session_state['report_data'],
-                file_name=f'{uploaded_file_name}.txt',
+                file_name=f'{image_file_name[:-4]}.txt',
                 mime='text/plain'
             )
 
             st.download_button(
                 label="Descargar imagen anotada (png)",
                 data=st.session_state['ann_image'],
-                file_name=f'{uploaded_file_name}_annotated.png',
+                file_name=f'{image_file_name[:-4]}_annotated.png',
                 mime='image/png'
             )
 
