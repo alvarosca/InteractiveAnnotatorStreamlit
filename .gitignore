@@ -15,4 +15,8 @@ __pycache__/
 *.tiff
 *.svg
 
+<<<<<<< HEAD
 "node_modules/"
+=======
+"node_modules/"
+>>>>>>> 4f06052e89e59bb62db5da7127e8002e93673562
