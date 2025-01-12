@@ -1,0 +1,8 @@
+
+    Reporte de anotación
+    ==================
+    Nombre de la imagen: example_image
+    Número de puntos positivos: 14 - Porcentaje: 100.0%
+    Número de puntos negativos: 0 - Porcentaje: 0.0%
+    Cantidad total de elementos 14
+    
