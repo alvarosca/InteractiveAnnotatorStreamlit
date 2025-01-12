@@ -10,8 +10,6 @@ import matplotlib.pyplot as plt
 from hashlib import md5
 from streamlit_image_annotation import IS_RELEASE
 
-from custom_image import image_to_url
-
 if IS_RELEASE:
     absolute_path = os.path.dirname(os.path.abspath(__file__))
     build_path = os.path.join(absolute_path, "frontend/build")
@@ -34,7 +32,7 @@ def pointdet(image_path, label_list, points=None, labels=None, height=512, width
     resized_image_size = image.size
     scale = original_image_size[0]/resized_image_size[0]
     
-    image_url = image_to_url(image, image.size[0], True, "RGB", "PNG", f"point-{md5(image.tobytes()).hexdigest()}-{key}")
+    image_url = st_image.image_to_url(image, image.size[0], True, "RGB", "PNG", f"point-{md5(image.tobytes()).hexdigest()}-{key}")
     if image_url.startswith('/'):
         image_url = image_url[1:]
 
