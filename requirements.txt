@@ -3,5 +3,5 @@ Pillow
 matplotlib
 pandas
 numpy
-opencv-python
+opencv-python-headless
 tifffile
