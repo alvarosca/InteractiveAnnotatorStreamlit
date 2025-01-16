@@ -12,6 +12,8 @@ import PointCanvas from "./PointCanvas";
 
 export interface PythonArgs {
   image_url: string,
+  mask_url: string,
+  contour_url: string,
   image_size: number[],
   label_list: string[],
   points_info: any[],
@@ -20,11 +22,15 @@ export interface PythonArgs {
   use_space: boolean,
   mode: string,   // <-- Added "mode" to the Python arguments
   label: string,  // <-- Added "label" to the Python arguments
-  zoom: number
+  zoom: number,
+  mask_trans: number,
+  contour_trans: number
 }
 const PointDet = ({ args, theme }: ComponentProps) => {
   const {
     image_url,
+    mask_url,
+    contour_url,
     image_size,
     label_list,
     points_info,
@@ -33,12 +39,16 @@ const PointDet = ({ args, theme }: ComponentProps) => {
     use_space,
     mode,  // <-- Extract "mode" from the args
     label,  // <-- Extract "label" from the args
-    zoom
+    zoom,
+    mask_trans,
+    contour_trans,
   }: PythonArgs = args
 
   const params = new URLSearchParams(window.location.search);
   const baseUrl = params.get('streamlitUrl')
   const [image] = useImage(baseUrl + image_url)
+  const [mask] = useImage(baseUrl + mask_url)
+  const [contour] = useImage(baseUrl + contour_url)
   const [pointsInfo, setPointsInfo] = React.useState(
     points_info.map((p, i) => {
       return {
@@ -121,9 +131,13 @@ const PointDet = ({ args, theme }: ComponentProps) => {
                 color_map={color_map}
                 label={label} 
                 image={image}
+                mask={mask}
+                contour={contour}
                 image_size={image_size}
                 strokeWidth={point_width}
                 zoom={zoom}
+                maskOpacity={mask_trans}
+                contourOpacity={contour_trans}
               />
             </Box>
           </HStack>

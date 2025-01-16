@@ -1,22 +1,26 @@
-import React, { useEffect } from "react"
-import { Layer, Stage, Image } from 'react-konva';
-import Point from './Point'
-import Konva from 'konva';
+import React, { useEffect } from "react";
+import { Layer, Stage, Image } from "react-konva";
+import Point from "./Point";
+import Konva from "konva";
 
 export interface PointCanvasProps {
-  pointsInfo: any[],
-  mode: string,
-  selectedId: string | null,
-  setSelectedId: any,
-  setPointsInfo: any,
-  setLabel: any,
-  color_map: any,
-  scale: number,
-  label: string,
-  image_size: number[],
-  image: any,
-  strokeWidth: number
-  zoom: number
+  pointsInfo: any[];
+  mode: string;
+  selectedId: string | null;
+  setSelectedId: any;
+  setPointsInfo: any;
+  setLabel: any;
+  color_map: any;
+  scale: number;
+  label: string;
+  image_size: number[];
+  image: any;
+  mask: any; // Add mask property
+  maskOpacity?: number; // Add mask opacity property
+  contour: any; // Add contour property
+  contourOpacity?: number; // Add contour opacity property
+  strokeWidth: number;
+  zoom: number;
 }
 
 const PointCanvas = (props: PointCanvasProps) => {
@@ -32,23 +36,27 @@ const PointCanvas = (props: PointCanvasProps) => {
     label,
     image_size,
     image,
+    mask,
+    maskOpacity = 0.5,
+    contour,
+    contourOpacity = 1,
     strokeWidth,
-    zoom
-  }: PointCanvasProps = props
-  
+    zoom,
+  }: PointCanvasProps = props;
+
   const checkDeselect = (e: any) => {
     if (!(e.target instanceof Konva.Circle)) {
-      if (selectedId === null && mode === 'Transform') {
-        const pointer = e.target.getStage().getPointerPosition()
+      if (selectedId === null && mode === "Transform") {
+        const pointer = e.target.getStage().getPointerPosition();
         const points = pointsInfo.slice();
-        const new_id = Date.now().toString()
+        const new_id = Date.now().toString();
         points.push({
-          x: pointer.x / (scale*zoom),
-          y: pointer.y / (scale*zoom),
+          x: pointer.x / (scale * zoom),
+          y: pointer.y / (scale * zoom),
           label: label,
           stroke: color_map[label],
-          id: new_id
-        })
+          id: new_id,
+        });
         setPointsInfo(points);
         setSelectedId(new_id);
       } else {
@@ -61,39 +69,62 @@ const PointCanvas = (props: PointCanvasProps) => {
     const points = pointsInfo.slice();
     for (let i = 0; i < points.length; i++) {
       if (points[i].x < 0 || points[i].y < 0) {
-        points[i].x = Math.max(0, points[i].x)
-        points[i].y = Math.max(0, points[i].y)
-        setPointsInfo(points)
+        points[i].x = Math.max(0, points[i].x);
+        points[i].y = Math.max(0, points[i].y);
+        setPointsInfo(points);
       }
       if (points[i].x > image_size[0] || points[i].y > image_size[1]) {
-        points[i].x = Math.min(points[i].x, image_size[0])
-        points[i].y = Math.min(points[i].y, image_size[1])
-        setPointsInfo(points)
+        points[i].x = Math.min(points[i].x, image_size[0]);
+        points[i].y = Math.min(points[i].y, image_size[1]);
+        setPointsInfo(points);
       }
     }
-  }, [pointsInfo, image_size])
+  }, [pointsInfo, image_size]);
 
   return (
     <div>
-      <Stage 
-        width={image_size[0] * (scale*zoom)}
-        height={image_size[1] * (scale*zoom)}
+      <Stage
+        width={image_size[0] * (scale * zoom)}
+        height={image_size[1] * (scale * zoom)}
         onMouseDown={checkDeselect}
       >
         <Layer>
-          <Image image={image} scaleX={(scale*zoom)} scaleY={(scale*zoom)} />
+          {/* Base image */}
+          <Image image={image} scaleX={scale * zoom} scaleY={scale * zoom} />
         </Layer>
+        {mask && (
+          <Layer>
+            {/* Overlay mask */}
+            <Image
+              image={mask}
+              scaleX={scale * zoom}
+              scaleY={scale * zoom}
+              opacity={maskOpacity} // Set transparency
+            />
+          </Layer>
+        )}
+        {contour && (
+            <Layer>
+              {/* Overlay contour */}
+              <Image
+                image={contour}
+                scaleX={scale * zoom}
+                scaleY={scale * zoom}
+                opacity={contourOpacity} // Set transparency
+              />
+            </Layer>
+          )}
         <Layer>
           {pointsInfo.map((point, i) => {
             return (
               <Point
                 key={i}
                 rectProps={point}
-                scale={(scale*zoom)}
+                scale={scale * zoom}
                 strokeWidth={strokeWidth}
-                isSelected={mode === 'Transform' && point.id === selectedId}
+                isSelected={mode === "Transform" && point.id === selectedId}
                 onClick={() => {
-                  if (mode === 'Transform') {
+                  if (mode === "Transform") {
                     setSelectedId(point.id);
                     const points = pointsInfo.slice();
                     const lastIndex = points.length - 1;
@@ -101,10 +132,12 @@ const PointCanvas = (props: PointCanvasProps) => {
                     points[lastIndex] = points[i];
                     points[i] = lastItem;
                     setPointsInfo(points);
-                    setLabel(point.label)
-                  } else if (mode === 'Del') {
+                    setLabel(point.label);
+                  } else if (mode === "Del") {
                     const points = pointsInfo.slice();
-                    setPointsInfo(points.filter((element) => element.id !== point.id));
+                    setPointsInfo(
+                      points.filter((element) => element.id !== point.id)
+                    );
                   }
                 }}
                 onChange={(newAttrs: any) => {

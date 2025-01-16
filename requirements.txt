@@ -1,6 +1,7 @@
-streamlit == 1.24.0
+streamlit
 Pillow
 matplotlib
 pandas
 numpy
 opencv-python
+tifffile
