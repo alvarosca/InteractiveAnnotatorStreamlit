@@ -1,237 +1,137 @@
 
 import numpy as np
 from PIL import Image, ImageDraw
-import cv2
-import tifffile as tiff
-import random
-import json
 
 from image_annotation import *
+from pydrive_utils import *
+
+checked_symbol = '(✅)'
+unchecked_symbol = ''
+
+path_to_json_key = "pydrivetesting-450213-d5d37d02d2f4.json"
 
 # Folders
 image_dir  = "./images"
 ann_dir    = "./annotations"
-mask_dir    = "./masks"
 report_dir = "./reports"
+anns_todo_dir = 'anotaciones_a_corregir'
+anns_done_dir = 'anotaciones_corregidas'
 
-contours_options = ["Si", "No"]
+label_list = ['Positivo', 'Negativo', 'No importante']
 
-def load_masks(unique_labels, masks_path="masks.tif"):
+def setup_drive(session_state):
+    drive = get_drive(path_to_json_key)
 
-    number_of_classes = len(unique_labels)+1
+    folder_dict, todo_dict, done_dict = \
+        get_dicts(drive, anns_todo_dir, anns_done_dir)
 
-    loaded_mask = tiff.imread(masks_path)
+    session_state['drive']=drive
+    session_state['todo_dict'] = todo_dict
+    session_state['done_dict'] = done_dict
+    session_state['folder_dict'] = folder_dict
 
-    mask_shape = loaded_mask.shape
-    mask_height = mask_shape[0]
-    mask_width = mask_shape[1]
+    todo_sample_names = list(todo_dict.keys()) 
+    done_sample_names = list(done_dict.keys())
 
-    number_of_masks = np.max(loaded_mask)//number_of_classes
+    sample_list = {}
+    for sample_name in todo_sample_names:
+        sample_list[sample_name] = False
+    for sample_name in done_sample_names:
+        sample_list[sample_name] = True
 
-    masks = np.zeros((number_of_masks, mask_height, mask_width)).astype(bool)
-    labels = np.zeros((number_of_masks))
+    # Create display names reflecting annotation status
+    display_samples = [f"{name} {checked_symbol if annotated else unchecked_symbol}"
+                        for name, annotated in sample_list.items()]
 
-    for y in range(mask_height):
-        for x in range(mask_width):
-            if loaded_mask[y,x]!=0:
-                label_id = loaded_mask[y,x] % number_of_classes
-                mask_id = loaded_mask[y,x] // number_of_classes - 1
-                masks[mask_id][y,x]=True
-                labels[mask_id] = label_id
+    sample_names = list(sample_list.keys()) 
 
-
-    return masks, labels
+    session_state['display_samples'] = display_samples
+    session_state['sample_names'] = sample_names
 
 
-def load_masks_from_json(unique_labels, input_path="masks.json", mask_shape=(512, 512)):
-    """
-    Loads masks and labels from a compact JSON file containing contours.
+def load_sample(session_state, selected_sample):
 
-    Parameters:
-        unique_labels (list): List of unique labels.
-        input_path (str): Path to the JSON file.
-        mask_shape (tuple): Shape of the output masks (height, width).
+    # Check if selected sample is alreaded downloaded
+    img_path = None
+    for file in os.listdir(image_dir):
+        if os.path.splitext(file)[0].strip() == selected_sample.strip():
+            img_path = f"{image_dir}/{file}" 
+            ann_file_path  = f"{ann_dir}/{selected_sample}.csv"
+            break
 
-    Returns:
-        masks (list): List of reconstructed masks as binary numpy arrays.
-        labels (list): List of labels corresponding to the masks.
-    """
-    # Load JSON data
-    with open(input_path, "r") as json_file:
-        data = json.load(json_file)
+    # Download sample
+    if img_path is None:
+        drive = session_state['drive']
+        todo_dict = session_state['todo_dict']
+        done_dict = session_state['done_dict']
 
-    contours_list = data["contours"]
-    labels_list = data["labels"]
+        if selected_sample in todo_dict.keys():
+            img_path = get_gdrive_image_path(drive, 
+                todo_dict[selected_sample], image_dir, selected_sample)
+            ann_file_path = get_gdrive_csv_path(drive, 
+                todo_dict[selected_sample], ann_dir, selected_sample)
 
-    masks = []
+        else:
+            img_path = get_gdrive_image_path(drive, 
+                done_dict[selected_sample], image_dir, selected_sample)    
+            ann_file_path = get_gdrive_csv_path(drive, 
+                done_dict[selected_sample], ann_dir, selected_sample)
+
+
+    image_file_name = selected_sample 
+    image = Image.open(img_path)
+    with open(ann_file_path, 'r', encoding='utf-8') as ann_csv:
+        annotations = ann_csv.read()
+
+    session_state['image'] = image
+    session_state['image_file_name'] = image_file_name
+    session_state['img_path'] = img_path
+    session_state['annotations'] = annotations
+
+    all_points, all_labels = read_results_from_csv(ann_file_path)
+    session_state['all_points'] = all_points
+    session_state['all_labels'] = all_labels
+
+    # This must be done last
+    session_state['load_succesful'] = True
+
+
+
+def finish_annotation(session_state, selected_sample):
+
+    drive = session_state['drive']
+    done_dict = session_state['done_dict']
+    todo_dict = session_state['todo_dict']
+    folder_dict = session_state['folder_dict']
+
+    done_folder_id = folder_dict[anns_done_dir]['id']
+
+    if selected_sample in todo_dict.keys():
+        file_list = todo_dict[selected_sample]
+        for file in file_list:
+            move_file(drive, file['id'], done_folder_id)
+    else:
+        file_list = done_dict[selected_sample]
+
+    x_coords = []
+    y_coords = []
     labels = []
+    for point in session_state['all_points']:
+        x_coords.append(point[0])
+        y_coords.append(point[1])
+        label_int = session_state['all_labels'][point]
+        labels.append(label_list[label_int])
 
-    for contour, label in zip(contours_list, labels_list):
-        # Reconstruct mask
-        mask = np.zeros(mask_shape, dtype=np.uint8)
-        contour_np = np.array(contour, dtype=np.int32)
-        cv2.drawContours(mask, [contour_np], -1, 1, thickness=cv2.FILLED)
-
-        masks.append(mask.astype(bool))
-        labels.append(label)
-
-    return masks, labels
-
-
-# Function to generate a random color
-def random_color():
-    return (random.randint(0, 255), random.randint(0, 255), random.randint(0, 255), 128)  # RGBA with 50% opacity
-
-# Create RGBA image from list of masks
-def create_rgba_image(masks, image_size):
-    # Initialize a transparent RGBA image
-    base_image = Image.new("RGBA", image_size, (0, 0, 0, 0))  # Transparent background
-
-    for mask in masks:
-        # Convert the mask to a Pillow image if it's a NumPy array
-        if isinstance(mask, np.ndarray):
-            mask_image = Image.fromarray((mask * 255).astype(np.uint8))  # Scale mask to 0-255
-        else:
-            mask_image = mask  # Assume it's already a Pillow image
-
-        # Generate a random color for the mask
-        color = random_color()
-
-        # Create a colored overlay
-        overlay = Image.new("RGBA", image_size, color)
-        # Use the mask as an alpha channel for the overlay
-        base_image = Image.alpha_composite(base_image, Image.composite(overlay, base_image, mask_image))
-
-    return base_image
-
-# Create RGBA image with only the contours of the masks
-def create_contour_image(masks, image_size, contour_thickness=2):
-    """
-    Create an RGBA image with contours of the masks.
-
-    Args:
-        masks: List of binary masks (NumPy arrays or Pillow images).
-        image_size: Tuple indicating the size of the image (width, height).
-        contour_thickness: Thickness of the contour lines.
-
-    Returns:
-        A Pillow Image object with the contours.
-    """
-    # Initialize a transparent RGBA image
-    base_image = Image.new("RGBA", image_size, (0, 0, 0, 0))  # Transparent background
-    draw = ImageDraw.Draw(base_image)
-
-    for mask in masks:
-        # Convert the mask to a NumPy array if it's a Pillow image
-        if not isinstance(mask, np.ndarray):
-            mask = np.array(mask)
-
-        # Extract the contour points from the binary mask
-        contours, _ = cv2.findContours(mask.astype(np.uint8), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-
-        # Draw each contour on the base image
-        for contour in contours:
-            # Generate a random color for the contour
-            # color = random_color()
-            color = (0,128,128)
-
-            # Convert contour to a list of tuples for Pillow
-            contour_points = [(int(point[0][0]), int(point[0][1])) for point in contour]
-
-            # Draw the contour with the specified thickness
-            draw.line(contour_points + [contour_points[0]], fill=color, width=contour_thickness)
-
-    return base_image
-
-
-def get_annotations(session_state, image_file_name):
-
-    ann_file_name = None
-
-    # Image upload
-    uploaded_file = st.file_uploader("Subir anotaciones ", type=["csv"])
-
-    if uploaded_file is not None:
-        if 'ann_file_name' not in session_state or session_state['ann_file_name'] != uploaded_file.name: 
-
-            session_state['ann_file_name'] = uploaded_file.name
-
-            base_name = os.path.splitext(image_file_name)[0]
-            ann_file_name = f"{ann_dir}/{base_name}.csv"
-
-            # Overwrite the current annotations csv file
-            with open(ann_file_name, "wb") as f:
-                f.write(uploaded_file.read())  # Save the file locally
-
-            # Force annotation csv retrieval
-            if 'image_file_name' in session_state:
-                session_state['image_file_name'] = " "
-
-
-        else:
-            ann_file_name = session_state['ann_file_name']
-
-    return ann_file_name
-
-
-def get_masks(session_state, image_size, label_list, mask_dir = "./masks"):
-
-    masks = []     
-    mask_labels = []
-    mask_img_path = None
-    contour_img_path = None
-
-    # Image upload
-    uploaded_file = st.file_uploader("Subir máscaras ", type=["tif","json"])
-
-    if uploaded_file is not None:
-
-        if 'mask_file_name' not in session_state or session_state['mask_file_name'] != uploaded_file.name: 
-
-            session_state['mask_file_name'] = uploaded_file.name
-
-            # Save tif file in 'mask_dir'
-            masks_file_name = os.path.join(mask_dir, uploaded_file.name)
-            with open(masks_file_name, "wb") as f:
-                f.write(uploaded_file.read())  # Save the file locally
-
-            if uploaded_file.name[-4:]==".tif":
-                masks, mask_labels = load_masks(label_list, masks_file_name)
-
-            elif uploaded_file.name[-5:]==".json":
-                masks, mask_labels = load_masks_from_json(
-                    label_list, masks_file_name, mask_shape=(image_size[1], image_size[0]))
-
-            else:
-                # Error
-                return masks, mask_labels, mask_img_path, contour_img_path
-
-
-            mask_img = create_rgba_image(masks, image_size)
-            contour_img = create_contour_image(masks, image_size)
-
-            mask_img_path = f"{mask_dir}/{uploaded_file.name}.png"
-            mask_img.save(mask_img_path)
-
-            contour_img_path = f"{mask_dir}/{uploaded_file.name}_contour.png"
-            contour_img.save(contour_img_path)
-
-            session_state['masks'] = masks        
-            session_state['mask_labels'] = mask_labels 
-            session_state['mask_img_path'] = mask_img_path
-            session_state['contour_img_path'] = contour_img_path
-
-        else:
-            masks = session_state['masks']
-            mask_labels = session_state['mask_labels']
-            mask_img_path = session_state['mask_img_path']
-            contour_img_path = session_state['contour_img_path']
-
-    return masks, mask_labels, mask_img_path, contour_img_path
+    update_gdrive_csv(drive, file_list, 
+        x_coords, y_coords, labels)
 
 
 
 def ann_correction(session_state):
+
+    if 'drive' not in session_state:
+        init_session(session_state)
+        setup_drive(session_state)
 
     st.sidebar.header("Seleccionar zoom")
     with st.sidebar:
@@ -253,33 +153,43 @@ def ann_correction(session_state):
         with col2:
             session_state['label'] = st.selectbox("Clase:", label_list)
 
-        col1, col2 = st.columns([2, 2])
-        with col1:
-            contours_option = st.selectbox("Contornos:", contours_options)
-            if contours_options.index(contours_option)==0:
-                session_state['display_contours'] = 1
-            else:
-                session_state['display_contours'] = 0
+    # Add a button to the sidebar
+    st.sidebar.header("Finalizar")
+    if st.sidebar.button("Finalizar correción"):
+        if 'selected_sample' in session_state:
+            finish_annotation(session_state, session_state['selected_sample'])
+            setup_drive(session_state) # Update drive
 
-        with col2:
-            session_state['transparency'] = st.slider("Transparencia:", 
-                    min_value=0.0, max_value=1.0, value=0.5, step=0.01)
+    # Get selected sample
+    display_sample = st.selectbox("Elegir una muestra:", session_state['display_samples'])
+    selected_sample = session_state['sample_names'][
+        session_state['display_samples'].index(display_sample)]
+    
+    # We check for changes on the selected sample
+    if 'selected_sample' not in session_state or \
+        session_state['selected_sample']!=selected_sample:
+
+        # We update the selected sample and trigger
+        # the loading of the sample 
+        session_state['load_succesful'] = False
+        session_state['selected_sample'] = selected_sample
+
+    # We check if the last load was succesful
+    if 'load_succesful' not in session_state or \
+        session_state['load_succesful']!=True:
+       load_sample(session_state, selected_sample)
 
 
-    image, image_file_name, img_path = get_image()
-    if image is not None:
-        ann_file_name = get_annotations(session_state, image_file_name)
-        masks, mask_labels, mask_img_path, contour_img_path = \
-            get_masks(session_state, image.size, label_list)
+    if 'image_file_name' in session_state:
 
+        image_file_name  = session_state['image_file_name']
+        img_path = session_state['img_path']
+        image = session_state['image']
+
+    else:
+        image_file_name = None
 
     if image_file_name is not None:
-
-        refresh_canvas = False
-        # Check if a new image is uploaded
-        if 'image_file_name' not in session_state or session_state['image_file_name'] != image_file_name:
-            handle_new_image(session_state, image, image_file_name, img_path)
-            refresh_canvas = True
 
         try:
             all_points = session_state['all_points']
@@ -292,7 +202,6 @@ def ann_correction(session_state):
             else:
                 mode = 'Transform'
 
-
         # User got disconnected - We recover the previous session
         except KeyError:
             base_name = os.path.splitext(image_file_name)[0]
@@ -302,17 +211,11 @@ def ann_correction(session_state):
 
             mode  = 'Transform'
 
-
         update_patch_data(session_state, all_points, all_labels)
-
-        if refresh_canvas: # Force update of the canvas by loading the default image
-            img_path = "./images/example_image.jpg"
 
         # Use pointdet to annotate the image
         new_labels = pointdet(
             image_path=img_path,
-            mask_path=mask_img_path,
-            contour_path=contour_img_path,
             label_list=label_list,
             points=session_state['points'],
             labels=session_state['labels'],
@@ -324,10 +227,7 @@ def ann_correction(session_state):
             label = session_state['label'],
             point_width=5,
             zoom=zoom,
-            m_transparency = session_state['transparency'],
-            c_transparency = session_state['display_contours']
         )
-
         
         # Update points and labels in session state if any changes are made
         if new_labels is not None:

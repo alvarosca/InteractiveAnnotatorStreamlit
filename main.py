@@ -7,7 +7,7 @@ image_dir  = "./images"
 ann_dir    = "./annotations"
 report_dir = "./reports"
 
-app_list = ["Anotación de imágenes", "Corrección de anotaciones", "Corrección de máscaras"]
+app_list = ["Anotación de imágenes", "Corrección de anotaciones"]
 
 # We want the wide mode to be set by default
 st.set_page_config(page_title=None, page_icon=None, layout="wide", initial_sidebar_state="auto", menu_items=None)

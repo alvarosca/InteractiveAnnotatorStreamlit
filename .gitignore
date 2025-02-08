@@ -3,10 +3,8 @@ __pycache__/
 *.pyc
 *.pyo
 
-# Ignore CSV
+# Ignore these file types
 *.csv
-
-# Ignore image files (add specific extensions as needed)
 *.jpg
 *.jpeg
 *.png
@@ -14,5 +12,8 @@ __pycache__/
 *.bmp
 *.tiff
 *.svg
+*.json
+*.txt
+*.log
 
 "node_modules/"
