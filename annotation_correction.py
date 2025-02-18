@@ -1,59 +1,144 @@
 
 import numpy as np
 from PIL import Image, ImageDraw
-import cv2
 
 from image_annotation import *
+from pydrive_utils import *
 
-def overlay_masks_on_image(pil_image, masks, mask_colors=[], transparency=0.5, thickness=1, borders=True):
-    """
-    Overlay annotations on a PIL image and return the modified image.
+checked_symbol = '(✅)'
+unchecked_symbol = ''
 
-    Args:
-        pil_image (PIL.Image.Image): The input image.
-        anns (list): List of annotation dictionaries. Each dictionary should contain a 'segmentation' key with a boolean mask.
-        mask_colors (list): List of colors for the masks in RGB format. Defaults to green for all masks.
-        transparency (float): Transparency of the overlay masks (0 to 1).
-        thickness (int): Thickness of the border lines.
-        borders (bool): Whether to draw borders around the masks.
+# Folders
+image_dir  = "./images"
+ann_dir    = "./annotations"
+report_dir = "./reports"
+anns_todo_dir = 'anotaciones_a_corregir'
+anns_done_dir = 'anotaciones_corregidas'
 
-    Returns:
-        PIL.Image.Image: The image with annotations overlayed.
-    """
-    if len(masks) == 0:
-        return pil_image
+label_list = ['Positivo', 'Negativo', 'No importante']
 
-    # Generate default mask colors if none are provided
-    if len(mask_colors) == 0:
-        mask_colors = np.tile(np.array([[0, 255, 0]]), (len(masks), 1))
+path_to_json_key = "pydrive_credentials.json"
 
-    # Convert PIL image to RGBA if not already in that mode
-    img = pil_image.convert("RGBA")
-    overlay = Image.new("RGBA", img.size, (255, 255, 255, 0))
+def setup_drive(session_state):
+    drive = get_drive(path_to_json_key)
 
-    for mask, fill_color in zip(masks, mask_colors):
-        fill_color = [int(c) for c in fill_color]
-        rgba_fill = (*fill_color, int(255 * transparency))
-        # Create a mask image from the segmentation
-        mask = Image.fromarray((mask * 255).astype(np.uint8), mode="L")
-        overlay.paste(Image.new("RGBA", img.size, rgba_fill), mask=mask)
+    folder_dict, todo_dict, done_dict = \
+        get_dicts(drive, anns_todo_dir, anns_done_dir)
 
-        if borders:
-            # Draw borders
-            contours, _ = cv2.findContours(mask.astype(np.uint8), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
-            contours = [cv2.approxPolyDP(contour, epsilon=0.01, closed=True) for contour in contours]
-            draw = ImageDraw.Draw(overlay)
-            for contour in contours:
-                points = [tuple(pt[0]) for pt in contour]
-                draw.line(points + [points[0]], fill=(0, 0, 255, int(255 * 0.4)), width=thickness)
+    session_state['drive']=drive
+    session_state['todo_dict'] = todo_dict
+    session_state['done_dict'] = done_dict
+    session_state['folder_dict'] = folder_dict
 
-    # Combine the original image with the overlay
-    combined = Image.alpha_composite(img, overlay)
-    return combined
+    todo_sample_names = list(todo_dict.keys()) 
+    done_sample_names = list(done_dict.keys())
+
+    sample_list = {}
+    for sample_name in todo_sample_names:
+        sample_list[sample_name] = False
+    for sample_name in done_sample_names:
+        sample_list[sample_name] = True
+
+    # Create display names reflecting annotation status
+    display_samples = [f"{name} {checked_symbol if annotated else unchecked_symbol}"
+                        for name, annotated in sample_list.items()]
+
+    sample_names = list(sample_list.keys()) 
+
+    session_state['display_samples'] = display_samples
+    session_state['sample_names'] = sample_names
+
+
+def load_sample(session_state, selected_sample):
+
+    # Check if selected sample is alreaded downloaded
+    img_path = None
+    for file in os.listdir(image_dir):
+        if os.path.splitext(file)[0].strip() == selected_sample.strip():
+            img_path = f"{image_dir}/{file}" 
+            ann_file_path  = f"{ann_dir}/{selected_sample}.csv"
+            break
+
+    # Download sample
+    if img_path is None:
+        drive = session_state['drive']
+        todo_dict = session_state['todo_dict']
+        done_dict = session_state['done_dict']
+
+        if selected_sample in todo_dict.keys():
+            img_path = get_gdrive_image_path(drive, 
+                todo_dict[selected_sample], image_dir, selected_sample)
+            ann_file_path = get_gdrive_csv_path(drive, 
+                todo_dict[selected_sample], ann_dir, selected_sample)
+
+        else:
+            img_path = get_gdrive_image_path(drive, 
+                done_dict[selected_sample], image_dir, selected_sample)    
+            ann_file_path = get_gdrive_csv_path(drive, 
+                done_dict[selected_sample], ann_dir, selected_sample)
+
+
+    image_file_name = selected_sample 
+    image = Image.open(img_path)
+    with open(ann_file_path, 'r', encoding='utf-8') as ann_csv:
+        annotations = ann_csv.read()
+
+    session_state['image'] = image
+    session_state['image_file_name'] = image_file_name
+    session_state['img_path'] = img_path
+    session_state['annotations'] = annotations
+
+    all_points, all_labels = read_results_from_csv(ann_file_path)
+    session_state['all_points'] = all_points
+    session_state['all_labels'] = all_labels
+
+    # This must be done last
+    session_state['load_succesful'] = True
+
+
+
+def finish_annotation(session_state, selected_sample):
+
+    drive = session_state['drive']
+    done_dict = session_state['done_dict']
+    todo_dict = session_state['todo_dict']
+    folder_dict = session_state['folder_dict']
+
+    done_folder_id = folder_dict[anns_done_dir]['id']
+
+    if selected_sample in todo_dict.keys():
+        file_list = todo_dict[selected_sample]
+        for file in file_list:
+            move_file(drive, file['id'], done_folder_id)
+    else:
+        file_list = done_dict[selected_sample]
+
+    x_coords = []
+    y_coords = []
+    labels = []
+    for point in session_state['all_points']:
+        x_coords.append(point[0])
+        y_coords.append(point[1])
+        label_int = session_state['all_labels'][point]
+        labels.append(label_list[label_int])
+
+    update_gdrive_csv(drive, file_list, 
+        x_coords, y_coords, labels)
 
 
 
 def ann_correction(session_state):
+
+    if 'drive' not in session_state:
+        
+        json_contents = st.secrets["service_account"]["credentials"]
+        json_contents = json.loads(json_contents)
+
+        with open(path_to_json_key, "w") as json_file:
+            json.dump(json_contents, json_file, indent=4)  # Pretty formatting
+
+        init_session(session_state)
+        setup_drive(session_state)
 
     st.sidebar.header("Seleccionar zoom")
     with st.sidebar:
@@ -75,11 +160,99 @@ def ann_correction(session_state):
         with col2:
             session_state['label'] = st.selectbox("Clase:", label_list)
 
+    # Add a button to the sidebar
+    st.sidebar.header("Finalizar")
+    if st.sidebar.button("Finalizar correción"):
+        if 'selected_sample' in session_state:
+            finish_annotation(session_state, session_state['selected_sample'])
+            setup_drive(session_state) # Update drive
+
+    # Get selected sample
+    display_sample = st.selectbox("Elegir una muestra:", session_state['display_samples'])
+    selected_sample = session_state['sample_names'][
+        session_state['display_samples'].index(display_sample)]
+    
+    # We check for changes on the selected sample
+    if 'selected_sample' not in session_state or \
+        session_state['selected_sample']!=selected_sample:
+
+        # We update the selected sample and trigger
+        # the loading of the sample 
+        session_state['load_succesful'] = False
+        session_state['selected_sample'] = selected_sample
+
+    # We check if the last load was succesful
+    if 'load_succesful' not in session_state or \
+        session_state['load_succesful']!=True:
+       load_sample(session_state, selected_sample)
+
+
+    if 'image_file_name' in session_state:
+
+        image_file_name  = session_state['image_file_name']
+        img_path = session_state['img_path']
+        image = session_state['image']
+
+    else:
+        image_file_name = None
+
+    if image_file_name is not None:
+
+        try:
+            all_points = session_state['all_points']
+            all_labels = session_state['all_labels']
+
+            # Translate the selected action
+            action = session_state['action']
+            if action == actions[1]:
+                mode = 'Del'
+            else:
+                mode = 'Transform'
+
+        # User got disconnected - We recover the previous session
+        except KeyError:
+            base_name = os.path.splitext(image_file_name)[0]
+            csv_file_name = f"{ann_dir}/{base_name}.csv"
+            all_points, all_labels = read_results_from_csv(csv_file_name)
+            recover_session(session_state, all_points, all_labels, image, base_name)
+
+            mode  = 'Transform'
+
+        update_patch_data(session_state, all_points, all_labels)
+
+        # Use pointdet to annotate the image
+        new_labels = pointdet(
+            image_path=img_path,
+            label_list=label_list,
+            points=session_state['points'],
+            labels=session_state['labels'],
+            width = image.size[0],
+            height = image.size[1],
+            use_space=True,
+            key=img_path,
+            mode = mode,
+            label = session_state['label'],
+            point_width=5,
+            zoom=zoom,
+        )
+        
+        # Update points and labels in session state if any changes are made
+        if new_labels is not None:
+
+            # Incorporate the new labels
+            all_points, all_labels = update_annotations(new_labels, all_points, all_labels, session_state)
+
+            # Update results
+            base_name = os.path.splitext(image_file_name)[0]
+            update_results(session_state, all_points, all_labels, base_name)
+            update_ann_image(session_state, all_points, all_labels, image)
+
+
+    # Download results
     if 'image_file_name' in session_state:
         st.sidebar.header("Resultados")
-        # Sidebar buttons
         with st.sidebar:
-            image_name = session_state['image_file_name'][:-4]
+            image_name = os.path.splitext(session_state['image_file_name'])[0]
             # **1st Download Button** - CSV Annotations
             st.download_button(
                 label="Descargar anotaciones (CSV)",
@@ -96,95 +269,10 @@ def ann_correction(session_state):
                 mime='text/plain'
             )
 
+            # **3rd Download Button** - Annotated Image
             st.download_button(
                 label="Descargar imagen anotada (png)",
                 data=session_state['ann_image'],
                 file_name=f'{image_name}_annotated.png',
                 mime='image/png'
             )
-
-
-    # Image upload
-    uploaded_image_file = st.file_uploader("Subir imagen ", type=["jpg", "jpeg", "png"])
-    uploaded_ann_file = st.file_uploader("Subir anotaciones ", type=["csv"])
-    uploaded_mask_file = st.file_uploader("Subir máscaras ", type=["tif"])
-
-    if uploaded_image_file is not None:
-        image_file_name = uploaded_image_file.name
-        image = Image.open(uploaded_image_file)
-        width, height = image.size
-        img_path = f"{image_dir}/{image_file_name}"
-
-    else:
-        # Check latest image
-        latest_image = check_latest_session_log()
-        result = check_files(latest_image)
-
-        if result:
-            # Recover the latest image
-            image_file_name = latest_image
-            image = Image.open(f"{image_dir}/{latest_image}")    
-            width, height = image.size
-            img_path = f"{image_dir}/{image_file_name}"
-
-
-    if image_file_name is not None:
-
-        # Check if a new image is uploaded
-        if 'image_file_name' not in session_state or session_state['image_file_name'] != image_file_name:
-
-            session_state['image_file_name'] = image_file_name
-
-            result = check_files(image_file_name)
-
-            if result: # Recover previous annotations
-                csv_file_name = f"{ann_dir}/{image_file_name[:-4]}.csv"
-                all_points, all_labels = read_results_from_csv(csv_file_name)
-                recover_session(session_state, all_points, all_labels, image, image_file_name[:-4])
-
-            else:
-                image.save(img_path)
-                init_session(session_state)
-
-            store_latest_session_log(image_file_name)
-
-        # Check if user got disconnected
-        try:
-            # Attempt to get session data
-            all_points = session_state["all_points"]
-
-        except KeyError:
-            csv_file_name = f"{ann_dir}/{image_file_name[:-4]}.csv"
-            all_points, all_labels = read_results_from_csv(csv_file_name)
-            recover_session(session_state, all_points, all_labels, image, image_file_name[:-4])
-
-
-        update_patch_data(session_state)
-
-        action = session_state['action']
-        if action == actions[1]:
-            mode = 'Del'
-        else:
-            mode = 'Transform'
-                    
-        # Use pointdet to annotate the image
-        new_labels = pointdet(
-            image_path=img_path,
-            label_list=label_list,
-            points=session_state['points'],
-            labels=session_state['labels'],
-            width = width,
-            height = height,
-            use_space=True,
-            key=img_path,
-            mode = mode,
-            label = session_state['label'],
-            point_width=5,
-            zoom=zoom,
-        )
-        
-        # Update points and labels in session state if any changes are made
-        if new_labels is not None:
-            update_annotations(new_labels, session_state)
-            update_results(session_state, image_file_name[:-4])
-            update_ann_image(session_state, image)

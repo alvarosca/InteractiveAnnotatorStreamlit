@@ -10,6 +10,8 @@ import matplotlib.pyplot as plt
 from hashlib import md5
 from streamlit_image_annotation import IS_RELEASE
 
+from custom_image import image_to_url
+
 if IS_RELEASE:
     absolute_path = os.path.dirname(os.path.abspath(__file__))
     build_path = os.path.join(absolute_path, "frontend/build")
@@ -25,20 +27,42 @@ def get_colormap(label_names, colormap_name='gist_rainbow'):
         colormap[l] = ('#%02x%02x%02x' % tuple(rgb))
     return colormap
 
-def pointdet(image_path, label_list, points=None, labels=None, height=512, width=512, point_width=3, use_space=False, key=None, mode=None, label=None, zoom=2) -> CustomComponent:
+def pointdet(image_path, label_list, points=None, labels=None, height=512, width=512, point_width=3, use_space=False, 
+             key=None, mode=None, label=None, mask_path=None, contour_path=None, m_transparency=0.5, c_transparency=1, zoom=2) -> CustomComponent:
     image = Image.open(image_path)
+
     original_image_size = image.size
     image.thumbnail(size=(width, height))
     resized_image_size = image.size
     scale = original_image_size[0]/resized_image_size[0]
     
-    image_url = st_image.image_to_url(image, image.size[0], True, "RGB", "PNG", f"point-{md5(image.tobytes()).hexdigest()}-{key}")
+    image_url = image_to_url(image, image.size[0], True, "RGBA", "PNG", f"point-{md5(image.tobytes()).hexdigest()}-{key}")
     if image_url.startswith('/'):
         image_url = image_url[1:]
 
+    if mask_path is not None:
+        mask = Image.open(mask_path)
+        mask_url = image_to_url(mask, image.size[0], True, "RGBA", "PNG", f"point-{md5(mask.tobytes()).hexdigest()}-{key}")
+        if mask_url.startswith('/'):
+            mask_url = mask_url[1:]
+
+    else:
+        m_transparency = 0
+        mask_url=image_url
+    
+    if contour_path is not None:
+        contour = Image.open(contour_path)
+        contour_url = image_to_url(contour, image.size[0], True, "RGBA", "PNG", f"point-{md5(contour.tobytes()).hexdigest()}-{key}")
+        if contour_url.startswith('/'):
+            contour_url = contour_url[1:]
+    else:
+        c_transparency = 0
+        contour_url=image_url
+
     color_map = get_colormap(label_list, colormap_name='gist_rainbow')
     points_info = [{'point':[b/scale for b in item[0]], 'label_id': item[1], 'label': label_list[item[1]]} for item in zip(points, labels)]
-    component_value = _component_func(image_url=image_url, image_size=image.size, label_list=label_list, points_info=points_info, color_map=color_map, point_width=point_width, use_space=use_space, key=key, mode=mode, label=label, zoom=zoom)
+    component_value = _component_func(image_url=image_url, mask_url=mask_url, contour_url=contour_url, image_size=image.size, label_list=label_list, points_info=points_info, 
+        color_map=color_map, point_width=point_width, use_space=use_space, key=key, mode=mode, label=label, zoom=zoom, mask_trans=m_transparency, contour_trans=c_transparency)
     if component_value is not None:
         component_value = [{'point':[b*scale for b in item['point']], 'label_id': item['label_id'], 'label': item['label']}for item in component_value]
     return component_value
