@@ -3,10 +3,8 @@ __pycache__/
 *.pyc
 *.pyo
 
-# Ignore CSV
+# Ignore these file types
 *.csv
-
-# Ignore image files (add specific extensions as needed)
 *.jpg
 *.jpeg
 *.png
@@ -14,9 +12,10 @@ __pycache__/
 *.bmp
 *.tiff
 *.svg
+*.json
+*.txt
+*.log
 
-<<<<<<< HEAD
 "node_modules/"
-=======
-"node_modules/"
->>>>>>> 4f06052e89e59bb62db5da7127e8002e93673562
+
+"streamlit_image_annotation/Point/frontend/node_modules/"
