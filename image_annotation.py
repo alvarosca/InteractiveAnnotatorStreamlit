@@ -25,7 +25,7 @@ def init_session(session_state):
     session_state['labels'] = []
     session_state['csv_data'] = b""
     session_state['report_data'] = b""
-    session_state['ann_image'] = b"" 
+    # session_state['ann_image'] = b"" 
 
 
 def update_patch_data(session_state, all_points, all_labels):
@@ -110,6 +110,9 @@ def update_annotations(new_labels, all_points, all_labels, session_state):
             all_points.add(point_tuple)
             all_labels[point_tuple] = label_id  # Store the label for this point
 
+        else:
+            all_labels[point_tuple] = label_id
+
     # Remove points
     removed_points = []
     for global_point in all_points:
@@ -139,61 +142,61 @@ def update_annotations(new_labels, all_points, all_labels, session_state):
     return all_points, all_labels
 
 
-def update_ann_image(session_state, all_points, all_labels, image):
-    """
-    Overlays points on the image with colors corresponding to their labels 
-    and stores the result in the session state for display and download.
+# def update_ann_image(session_state, all_points, all_labels, image):
+#     """
+#     Overlays points on the image with colors corresponding to their labels 
+#     and stores the result in the session state for display and download.
 
-    Args:
-        session_state: dict containing `all_points` and `all_labels`.
-            - `all_points`: List of tuples representing points (x, y).
-            - `all_labels`: Dictionary mapping points to labels.
-        image: PIL.Image object representing the base image.
-    """
+#     Args:
+#         session_state: dict containing `all_points` and `all_labels`.
+#             - `all_points`: List of tuples representing points (x, y).
+#             - `all_labels`: Dictionary mapping points to labels.
+#         image: PIL.Image object representing the base image.
+#     """
 
-    # Define colors for each label
-    label_colors = {
-        0: (255, 0, 0),  # Red
-        1: (0, 255, 0),  # Green
-        2: (0, 0, 255),  # Blue
-        # Add more labels and their colors as needed
-    }
+#     # Define colors for each label
+#     label_colors = {
+#         0: (255, 0, 0),  # Red
+#         1: (0, 255, 0),  # Green
+#         2: (0, 0, 255),  # Blue
+#         # Add more labels and their colors as needed
+#     }
 
-    # Create a drawable image
-    ann_image = image.copy()
-    draw = ImageDraw.Draw(ann_image)
+#     # Create a drawable image
+#     ann_image = image.copy()
+#     draw = ImageDraw.Draw(ann_image)
 
-    # Draw each point with the corresponding color
-    point_radius = 7.5  # Radius of each point
-    for point in all_points:
-        x, y = point
-        label = all_labels.get(point, "default")  # Get the label for the point
-        color = label_colors.get(label, (255, 255, 255))  # Default to white if label not found
+#     # Draw each point with the corresponding color
+#     point_radius = 7.5  # Radius of each point
+#     for point in all_points:
+#         x, y = point
+#         label = all_labels.get(point, "default")  # Get the label for the point
+#         color = label_colors.get(label, (255, 255, 255))  # Default to white if label not found
 
-        # Draw the point as a filled circle
-        draw.ellipse(
-            [(x - point_radius, y - point_radius), (x + point_radius, y + point_radius)],
-            outline=color,
-            width=5,
-        )
+#         # Draw the point as a filled circle
+#         draw.ellipse(
+#             [(x - point_radius, y - point_radius), (x + point_radius, y + point_radius)],
+#             outline=color,
+#             width=5,
+#         )
 
-    # Convert the annotated image to a downloadable JPEG format
-    image_buffer = io.BytesIO()
-    ann_image.save(image_buffer, format="PNG")
-    image_buffer.seek(0)
+#     # Convert the annotated image to a downloadable JPEG format
+#     image_buffer = io.BytesIO()
+#     ann_image.save(image_buffer, format="PNG")
+#     image_buffer.seek(0)
 
-    # Store the annotated image
-    session_state['ann_image'] = image_buffer
+#     # Store the annotated image
+#     session_state['ann_image'] = image_buffer
 
 
-def recover_session(session_state, all_points, all_labels, image, file_name):
+def recover_session(session_state, all_points, all_labels, file_name, image=None):
 
     session_state['all_points'] = all_points 
     session_state['all_labels'] = all_labels 
 
     update_patch_data(session_state, all_points, all_labels)
     update_results(session_state, all_points, all_labels, file_name)
-    update_ann_image(session_state, all_points, all_labels, image)
+    # update_ann_image(session_state, all_points, all_labels, image)
 
 
 def check_latest_session_log(log_path = "latest_session.log"):
@@ -279,9 +282,8 @@ def read_results_from_csv(csv_filename):
     return all_points, all_labels
 
 
-def get_image():
+def get_image(session_state):
 
-    image = None     
     image_file_name = None
     img_path = None
 
@@ -290,28 +292,35 @@ def get_image():
 
     if uploaded_file is not None:
         image_file_name = uploaded_file.name
-        image = Image.open(uploaded_file)
         img_path = f"{image_dir}/{image_file_name}"
+        image = Image.open(uploaded_file)
 
     # No image was uploaded - We use the latest one from a previous session
     else: 
-        # Check latest image
         latest_image = check_latest_session_log()
         result = check_files(latest_image)
-
         if result:
-            # Recover the latest image
             image_file_name = latest_image
-            image = Image.open(f"{image_dir}/{latest_image}")    
             img_path = f"{image_dir}/{image_file_name}"
+            image = Image.open(img_path)
 
-    return image, image_file_name, img_path    
+        else: # No image from previous session
+            return image_file_name, img_path
+            
+    if 'image_file_name' not in session_state or session_state['image_file_name'] != image_file_name:
+        handle_new_image(session_state, image, image_file_name, img_path)
+        session_state['image_file_name'] = image_file_name
+        session_state['img_path'] = img_path
+
+    else:
+        image_file_name = session_state['image_file_name']
+        img_path = session_state['img_path']    
+        return image_file_name, img_path
+        
+    return image_file_name, img_path    
 
 
 def handle_new_image(session_state, image, image_file_name, img_path):
-
-    # We update the name of the current image
-    session_state['image_file_name'] = image_file_name
 
     # We check if the image was previously annotated
     result = check_files(image_file_name)
@@ -320,11 +329,19 @@ def handle_new_image(session_state, image, image_file_name, img_path):
         base_name = os.path.splitext(image_file_name)[0]
         csv_file_name = f"{ann_dir}/{base_name}.csv"
         all_points, all_labels = read_results_from_csv(csv_file_name)
-        recover_session(session_state, all_points, all_labels, image, base_name)
+        recover_session(session_state, all_points, all_labels, base_name)
 
     else: # We store a backup of the image
         image.save(img_path)
         init_session(session_state)
+
+
+    height = image.size[1]
+    width  = image.size[0]
+    scale = 1280/width
+    session_state['resized_image'] = image.resize((1280, int(scale*height)))
+    session_state['height'] = int(scale*height)
+    session_state['scale'] = scale
 
     # We log the name of the image for session backups
     store_latest_session_log(image_file_name)
@@ -353,14 +370,9 @@ def image_ann(session_state):
             session_state['label'] = st.selectbox("Clase:", label_list)
 
 
-    image, image_file_name, img_path = get_image()
+    image_file_name, img_path = get_image(session_state)
 
     if image_file_name is not None:
-
-        # Check if a new image is uploaded
-        if 'image_file_name' not in session_state or session_state['image_file_name'] != image_file_name:
-            handle_new_image(session_state, image, image_file_name, img_path)
-
         try:
             all_points = session_state['all_points']
             all_labels = session_state['all_labels']
@@ -372,13 +384,15 @@ def image_ann(session_state):
             else:
                 mode = 'Transform'
 
-
         # User got disconnected - We recover the previous session
         except KeyError:
+            image = Image.open(img_path)
+            handle_new_image(session_state, image, image_file_name, img_path)
+
             base_name = os.path.splitext(image_file_name)[0]
             csv_file_name = f"{ann_dir}/{base_name}.csv"
             all_points, all_labels = read_results_from_csv(csv_file_name)
-            recover_session(session_state, all_points, all_labels, image, base_name)
+            recover_session(session_state, all_points, all_labels, base_name)
 
             mode  = 'Transform'
 
@@ -387,12 +401,13 @@ def image_ann(session_state):
                     
         # Use pointdet to annotate the image
         new_labels = pointdet(
-            image_path=img_path,
+            image=session_state['resized_image'],
             label_list=label_list,
             points=session_state['points'],
             labels=session_state['labels'],
             width = 1280,
-            height = int(image.size[1]*1280/image.size[0]),
+            height = session_state['height'],
+            manual_scale = session_state['scale'],
             use_space=True,
             key=img_path,
             mode = mode,
@@ -410,7 +425,7 @@ def image_ann(session_state):
             # Update results
             base_name = os.path.splitext(image_file_name)[0]
             update_results(session_state, all_points, all_labels, base_name)
-            update_ann_image(session_state, all_points, all_labels, image)
+            # update_ann_image(session_state, all_points, all_labels, image)
 
 
 
@@ -435,10 +450,10 @@ def image_ann(session_state):
                 mime='text/plain'
             )
 
-            # **3rd Download Button** - Annotated Image
-            st.download_button(
-                label="Descargar imagen anotada (png)",
-                data=session_state['ann_image'],
-                file_name=f'{image_name}_annotated.png',
-                mime='image/png'
-            )
+            # # **3rd Download Button** - Annotated Image
+            # st.download_button(
+            #     label="Descargar imagen anotada (png)",
+            #     data=session_state['ann_image'],
+            #     file_name=f'{image_name}_annotated.png',
+            #     mime='image/png'
+            # )

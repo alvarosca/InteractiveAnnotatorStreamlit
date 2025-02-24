@@ -1,5 +1,5 @@
-import React, { useEffect } from "react";
-import { Layer, Stage, Image } from "react-konva";
+import React, { useEffect, useState } from "react";
+import { Layer, Stage, Image, Rect } from "react-konva";
 import Point from "./Point";
 import Konva from "konva";
 
@@ -15,10 +15,10 @@ export interface PointCanvasProps {
   label: string;
   image_size: number[];
   image: any;
-  mask: any; // Add mask property
-  maskOpacity?: number; // Add mask opacity property
-  contour: any; // Add contour property
-  contourOpacity?: number; // Add contour opacity property
+  mask: any;
+  maskOpacity?: number;
+  contour: any;
+  contourOpacity?: number;
   strokeWidth: number;
   zoom: number;
 }
@@ -42,113 +42,181 @@ const PointCanvas = (props: PointCanvasProps) => {
     contourOpacity = 1,
     strokeWidth,
     zoom,
-  }: PointCanvasProps = props;
+  } = props;
 
-  const checkDeselect = (e: any) => {
-    if (!(e.target instanceof Konva.Circle)) {
-      if (selectedId === null && mode === "Transform") {
-        const pointer = e.target.getStage().getPointerPosition();
-        const points = pointsInfo.slice();
-        const new_id = Date.now().toString();
-        points.push({
-          x: pointer.x / (scale * zoom),
-          y: pointer.y / (scale * zoom),
-          label: label,
-          stroke: color_map[label],
-          id: new_id,
-        });
-        setPointsInfo(points);
-        setSelectedId(new_id);
+  const [selectionBox, setSelectionBox] = useState<{ x: number; y: number; width: number; height: number } | null>(null);
+  const [startPos, setStartPos] = useState<{ x: number; y: number } | null>(null);
+  const [isDragging, setIsDragging] = useState(false);
+
+  const handleMouseDown = (e: any) => {
+    if (mode !== "Transform") return;
+  
+    const stage = e.target.getStage();
+    const pointer = stage.getPointerPosition();
+    if (!pointer) return;
+  
+    const clickedPoint = pointsInfo.find(point => {
+      const pointScreenX = point.x * scale * zoom;
+      const pointScreenY = point.y * scale * zoom;
+      return Math.abs(pointScreenX - pointer.x) < 5 && Math.abs(pointScreenY - pointer.y) < 5;
+    });
+  
+    if (clickedPoint) {
+      // Clicked on an existing point → Select it
+      setSelectedId(clickedPoint.id);
+      setLabel(clickedPoint.label);
+      setSelectionBox(null);
+      setStartPos(null);
+      return;
+    }
+  
+    // Start drawing selection box or placing a new point
+    setStartPos({ x: pointer.x, y: pointer.y });
+    setSelectionBox({ x: pointer.x, y: pointer.y, width: 0, height: 0 });
+    setIsDragging(false); // Reset dragging state
+  };
+  
+  const handleMouseMove = (e: any) => {
+    if (!startPos) return;
+  
+    const stage = e.target.getStage();
+    const pointer = stage.getPointerPosition();
+    if (!pointer) return;
+  
+    setSelectionBox({
+      x: Math.min(startPos.x, pointer.x),
+      y: Math.min(startPos.y, pointer.y),
+      width: Math.abs(pointer.x - startPos.x),
+      height: Math.abs(pointer.y - startPos.y),
+    });
+  };
+  
+  const handleMouseUp = (e: any) => {
+    if (!startPos) return;
+  
+    const stage = e.target.getStage();
+    const pointer = stage.getPointerPosition();
+    if (!pointer) return;
+  
+    // Compute drag distance
+    const dx = pointer.x - startPos.x;
+    const dy = pointer.y - startPos.y;
+    const distance = Math.sqrt(dx * dx + dy * dy);
+  
+    const isActuallyDragging = distance > 10; // Consider dragging if moved more than 10 pixels
+  
+    if (!isActuallyDragging) {
+      // **Click event: Add a new point**
+      const newPoint = {
+        id: `${Date.now()}`,
+        x: pointer.x / (scale * zoom),
+        y: pointer.y / (scale * zoom),
+        label: label,
+        stroke: color_map[label],
+      };
+      setPointsInfo([...pointsInfo, newPoint]);
+      setSelectedId(newPoint.id);
+      setLabel(newPoint.label);
+    } else {
+      // **Selection logic**
+      const centerX = selectionBox!.x + selectionBox!.width / 2;
+      const centerY = selectionBox!.y + selectionBox!.height / 2;
+  
+      const xMin = selectionBox!.x / (scale * zoom);
+      const yMin = selectionBox!.y / (scale * zoom);
+      const xMax = (selectionBox!.x + selectionBox!.width) / (scale * zoom);
+      const yMax = (selectionBox!.y + selectionBox!.height) / (scale * zoom);
+  
+      let closestPoint: (typeof pointsInfo)[number] | null = null;
+      let minDist = Infinity;
+  
+      pointsInfo.forEach((point) => {
+        if (point.x >= xMin && point.x <= xMax && point.y >= yMin && point.y <= yMax) {
+          const pointScreenX = point.x * scale * zoom;
+          const pointScreenY = point.y * scale * zoom;
+          const dist = Math.sqrt((centerX - pointScreenX) ** 2 + (centerY - pointScreenY) ** 2);
+  
+          if (dist < minDist) {
+            minDist = dist;
+            closestPoint = point;
+          }
+        }
+      });
+  
+      if (closestPoint) {
+        setSelectedId(closestPoint.id);
+        setLabel(closestPoint.label);
       } else {
         setSelectedId(null);
       }
     }
+  
+    setSelectionBox(null);
+    setStartPos(null);
+    setIsDragging(false);
   };
-
-  useEffect(() => {
-    const points = pointsInfo.slice();
-    for (let i = 0; i < points.length; i++) {
-      if (points[i].x < 0 || points[i].y < 0) {
-        points[i].x = Math.max(0, points[i].x);
-        points[i].y = Math.max(0, points[i].y);
-        setPointsInfo(points);
-      }
-      if (points[i].x > image_size[0] || points[i].y > image_size[1]) {
-        points[i].x = Math.min(points[i].x, image_size[0]);
-        points[i].y = Math.min(points[i].y, image_size[1]);
-        setPointsInfo(points);
-      }
-    }
-  }, [pointsInfo, image_size]);
+  
 
   return (
     <div>
       <Stage
         width={image_size[0] * (scale * zoom)}
         height={image_size[1] * (scale * zoom)}
-        onMouseDown={checkDeselect}
+        onMouseDown={handleMouseDown}
+        onMouseMove={handleMouseMove}
+        onMouseUp={handleMouseUp}
       >
         <Layer>
-          {/* Base image */}
           <Image image={image} scaleX={scale * zoom} scaleY={scale * zoom} />
         </Layer>
         {mask && (
           <Layer>
-            {/* Overlay mask */}
-            <Image
-              image={mask}
-              scaleX={scale * zoom}
-              scaleY={scale * zoom}
-              opacity={maskOpacity} // Set transparency
-            />
+            <Image image={mask} scaleX={scale * zoom} scaleY={scale * zoom} opacity={maskOpacity} />
           </Layer>
         )}
         {contour && (
-            <Layer>
-              {/* Overlay contour */}
-              <Image
-                image={contour}
-                scaleX={scale * zoom}
-                scaleY={scale * zoom}
-                opacity={contourOpacity} // Set transparency
-              />
-            </Layer>
-          )}
+          <Layer>
+            <Image image={contour} scaleX={scale * zoom} scaleY={scale * zoom} opacity={contourOpacity} />
+          </Layer>
+        )}
         <Layer>
-          {pointsInfo.map((point, i) => {
-            return (
-              <Point
-                key={i}
-                rectProps={point}
-                scale={scale * zoom}
-                strokeWidth={strokeWidth}
-                isSelected={mode === "Transform" && point.id === selectedId}
-                onClick={() => {
-                  if (mode === "Transform") {
-                    setSelectedId(point.id);
-                    const points = pointsInfo.slice();
-                    const lastIndex = points.length - 1;
-                    const lastItem = points[lastIndex];
-                    points[lastIndex] = points[i];
-                    points[i] = lastItem;
-                    setPointsInfo(points);
-                    setLabel(point.label);
-                  } else if (mode === "Del") {
-                    const points = pointsInfo.slice();
-                    setPointsInfo(
-                      points.filter((element) => element.id !== point.id)
-                    );
-                  }
-                }}
-                onChange={(newAttrs: any) => {
-                  const points = pointsInfo.slice();
-                  points[i] = newAttrs;
-                  setPointsInfo(points);
-                }}
-              />
-            );
-          })}
+          {pointsInfo.map((point, i) => (
+            <Point
+              key={point.id}
+              rectProps={point}
+              scale={scale * zoom}
+              strokeWidth={strokeWidth}
+              isSelected={mode === "Transform" && point.id === selectedId}
+              onClick={() => {
+                if (mode === "Transform") {
+                  setSelectedId(point.id);
+                  setLabel(point.label);
+                } else if (mode === "Del") {
+                  setPointsInfo(pointsInfo.filter((p) => p.id !== point.id));
+                }
+              }}
+              onChange={(newAttrs: any) => {
+                const points = pointsInfo.slice();
+                points[i] = newAttrs;
+                setPointsInfo(points);
+              }}
+            />
+          ))}
         </Layer>
+        {selectionBox && (
+          <Layer>
+            <Rect
+              x={selectionBox.x}
+              y={selectionBox.y}
+              width={selectionBox.width}
+              height={selectionBox.height}
+              stroke="blue"
+              strokeWidth={1}
+              dash={[4, 4]}
+              fill="rgba(0, 0, 255, 0.2)"
+            />
+          </Layer>
+        )}
       </Stage>
     </div>
   );
