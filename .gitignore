@@ -17,5 +17,3 @@ __pycache__/
 *.log
 
 "node_modules/"
-
-"streamlit_image_annotation/Point/frontend/node_modules/"

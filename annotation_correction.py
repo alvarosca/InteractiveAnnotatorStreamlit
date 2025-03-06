@@ -135,6 +135,17 @@ def finish_annotation(session_state, selected_sample):
 
 def ann_correction(session_state):
 
+    st.markdown(
+        """
+        ### ℹ️ Consejos de uso  
+        - **Selección de puntos:** Haz clic y arrastra para dibujar un cuadro y seleccionar puntos.
+        - **Eliminar puntos:** Presionar 'retroceso' permite eliminar los puntos seleccionados.
+        - **Cambiar etiqueta:** Presionar 'shift' cambia la clase del punto seleccionado.  
+        - **Mover imagen horizontalmente:** Usa las flechas del teclado para moverte a través de la imagen.
+        """,
+        unsafe_allow_html=True
+    )
+
     if 'drive' not in session_state:
         
         json_contents = st.secrets["service_account"]["credentials"]
@@ -146,15 +157,22 @@ def ann_correction(session_state):
         init_session(session_state)
         setup_drive(session_state)
 
-    st.sidebar.header("Seleccionar zoom")
+    st.sidebar.header("Visualización")
     with st.sidebar:
+        point_vis = st.checkbox(
+            "Mostrar puntos", 
+            value=True, 
+            help="Activa o desactiva la visualización de los puntos en la imagen."
+        )            
         zoom = st.number_input(
             "Zoom", 
             min_value=1, 
             max_value=4, 
             value=1, 
             step=1
-        )            
+        )
+
+
 
     # Sidebar content
     st.sidebar.header("Anotación de imágenes")
@@ -236,7 +254,7 @@ def ann_correction(session_state):
             key=img_path,
             mode = mode,
             label = session_state['label'],
-            point_width=5,
+            point_width=5*point_vis,
             zoom=zoom,
         )
         
