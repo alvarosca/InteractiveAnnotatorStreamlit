@@ -80,10 +80,16 @@ def load_sample(session_state, selected_sample):
 
     image_file_name = selected_sample 
     image = Image.open(img_path)
+    height = image.size[1]
+    width  = image.size[0]
+    scale = 1280/width
+    session_state['resized_image'] = image.resize((1280, int(scale*height)))
+    session_state['height'] = int(scale*height)
+    session_state['scale'] = scale
+
     with open(ann_file_path, 'r', encoding='utf-8') as ann_csv:
         annotations = ann_csv.read()
 
-    session_state['image'] = image
     session_state['image_file_name'] = image_file_name
     session_state['img_path'] = img_path
     session_state['annotations'] = annotations
@@ -129,6 +135,17 @@ def finish_annotation(session_state, selected_sample):
 
 def ann_correction(session_state):
 
+    st.markdown(
+        """
+        ### ℹ️ Consejos de uso  
+        - **Selección de puntos:** Haz clic y arrastra para dibujar un cuadro y seleccionar puntos.
+        - **Eliminar puntos:** Presionar 'retroceso' permite eliminar los puntos seleccionados.
+        - **Cambiar etiqueta:** Presionar 'shift' cambia la clase del punto seleccionado.  
+        - **Mover imagen horizontalmente:** Usa las flechas del teclado para moverte a través de la imagen.
+        """,
+        unsafe_allow_html=True
+    )
+
     if 'drive' not in session_state:
         
         json_contents = st.secrets["service_account"]["credentials"]
@@ -140,15 +157,22 @@ def ann_correction(session_state):
         init_session(session_state)
         setup_drive(session_state)
 
-    st.sidebar.header("Seleccionar zoom")
+    st.sidebar.header("Visualización")
     with st.sidebar:
+        point_vis = st.checkbox(
+            "Mostrar puntos", 
+            value=True, 
+            help="Activa o desactiva la visualización de los puntos en la imagen."
+        )            
         zoom = st.number_input(
             "Zoom", 
             min_value=1, 
             max_value=4, 
             value=1, 
             step=1
-        )            
+        )
+
+
 
     # Sidebar content
     st.sidebar.header("Anotación de imágenes")
@@ -186,12 +210,9 @@ def ann_correction(session_state):
         session_state['load_succesful']!=True:
        load_sample(session_state, selected_sample)
 
-
     if 'image_file_name' in session_state:
-
         image_file_name  = session_state['image_file_name']
         img_path = session_state['img_path']
-        image = session_state['image']
 
     else:
         image_file_name = None
@@ -214,7 +235,7 @@ def ann_correction(session_state):
             base_name = os.path.splitext(image_file_name)[0]
             csv_file_name = f"{ann_dir}/{base_name}.csv"
             all_points, all_labels = read_results_from_csv(csv_file_name)
-            recover_session(session_state, all_points, all_labels, image, base_name)
+            recover_session(session_state, all_points, all_labels, base_name)
 
             mode  = 'Transform'
 
@@ -222,17 +243,18 @@ def ann_correction(session_state):
 
         # Use pointdet to annotate the image
         new_labels = pointdet(
-            image_path=img_path,
+            image=session_state['resized_image'],
             label_list=label_list,
             points=session_state['points'],
             labels=session_state['labels'],
             width = 1280,
-            height = int(image.size[1]*1280/image.size[0]),
+            height = session_state['height'],
+            manual_scale = session_state['scale'],
             use_space=True,
             key=img_path,
             mode = mode,
             label = session_state['label'],
-            point_width=5,
+            point_width=5*point_vis,
             zoom=zoom,
         )
         
@@ -245,7 +267,7 @@ def ann_correction(session_state):
             # Update results
             base_name = os.path.splitext(image_file_name)[0]
             update_results(session_state, all_points, all_labels, base_name)
-            update_ann_image(session_state, all_points, all_labels, image)
+            # update_ann_image(session_state, all_points, all_labels, image)
 
 
     # Download results
@@ -269,10 +291,10 @@ def ann_correction(session_state):
                 mime='text/plain'
             )
 
-            # **3rd Download Button** - Annotated Image
-            st.download_button(
-                label="Descargar imagen anotada (png)",
-                data=session_state['ann_image'],
-                file_name=f'{image_name}_annotated.png',
-                mime='image/png'
-            )
+            # # **3rd Download Button** - Annotated Image
+            # st.download_button(
+            #     label="Descargar imagen anotada (png)",
+            #     data=session_state['ann_image'],
+            #     file_name=f'{image_name}_annotated.png',
+            #     mime='image/png'
+            # )
