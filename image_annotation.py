@@ -349,8 +349,24 @@ def handle_new_image(session_state, image, image_file_name, img_path):
 
 def image_ann(session_state):
 
+    st.markdown(
+        """
+        ### ℹ️ Consejos de uso  
+        - **Selección de puntos:** Haz clic y arrastra para dibujar un cuadro y seleccionar puntos.
+        - **Eliminar puntos:** Presionar 'retroceso' permite eliminar los puntos seleccionados.
+        - **Cambiar etiqueta:** Presionar 'shift' cambia la clase del punto seleccionado.  
+        - **Mover imagen horizontalmente:** Usa las flechas del teclado para moverte a través de la imagen.
+        """,
+        unsafe_allow_html=True
+    )
+
     st.sidebar.header("Seleccionar zoom")
     with st.sidebar:
+        point_vis = st.checkbox(
+            "Mostrar puntos", 
+            value=True, 
+            help="Activa o desactiva la visualización de los puntos en la imagen."
+        )     
         zoom = st.number_input(
             "Zoom", 
             min_value=1, 
@@ -412,7 +428,7 @@ def image_ann(session_state):
             key=img_path,
             mode = mode,
             label = session_state['label'],
-            point_width=5,
+            point_width=5*point_vis,
             zoom=zoom,
         )
         
