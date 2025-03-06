@@ -27,14 +27,16 @@ def get_colormap(label_names, colormap_name='gist_rainbow'):
         colormap[l] = ('#%02x%02x%02x' % tuple(rgb))
     return colormap
 
-def pointdet(image_path, label_list, points=None, labels=None, height=512, width=512, point_width=3, use_space=False, 
+def pointdet(image, label_list, points=None, labels=None, height=512, width=512, manual_scale=-1, point_width=3, use_space=False, 
              key=None, mode=None, label=None, mask_path=None, contour_path=None, m_transparency=0.5, c_transparency=1, zoom=2) -> CustomComponent:
-    image = Image.open(image_path)
 
-    original_image_size = image.size
-    image.thumbnail(size=(width, height))
-    resized_image_size = image.size
-    scale = original_image_size[0]/resized_image_size[0]
+    if manual_scale != -1:
+        scale = 1/manual_scale
+    else:
+        original_image_size = image.size
+        image.thumbnail(size=(width, height))
+        resized_image_size = image.size
+        scale = original_image_size[0]/resized_image_size[0]
     
     image_url = image_to_url(image, image.size[0], True, "RGBA", "PNG", f"point-{md5(image.tobytes()).hexdigest()}-{key}")
     if image_url.startswith('/'):

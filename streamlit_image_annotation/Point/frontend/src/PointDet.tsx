@@ -3,8 +3,8 @@ import {
   withStreamlitConnection,
   ComponentProps
 } from "streamlit-component-lib"
-import React, { useEffect, useState } from "react"
-import { ChakraProvider, Box, Spacer, HStack, Center } from '@chakra-ui/react'
+import React, { useEffect, useState, useRef } from "react"
+import { ChakraProvider, Box, HStack, Center } from '@chakra-ui/react'
 
 import useImage from 'use-image';
 import ThemeSwitcher from './ThemeSwitcher'
@@ -20,12 +20,13 @@ export interface PythonArgs {
   color_map: any,
   point_width: number,
   use_space: boolean,
-  mode: string,   // <-- Added "mode" to the Python arguments
-  label: string,  // <-- Added "label" to the Python arguments
+  mode: string,
+  label: string,
   zoom: number,
   mask_trans: number,
   contour_trans: number
 }
+
 const PointDet = ({ args, theme }: ComponentProps) => {
   const {
     image_url,
@@ -36,9 +37,8 @@ const PointDet = ({ args, theme }: ComponentProps) => {
     points_info,
     color_map,
     point_width,
-    use_space,
-    mode,  // <-- Extract "mode" from the args
-    label,  // <-- Extract "label" from the args
+    mode,
+    label,
     zoom,
     mask_trans,
     contour_trans,
@@ -49,62 +49,81 @@ const PointDet = ({ args, theme }: ComponentProps) => {
   const [image] = useImage(baseUrl + image_url)
   const [mask] = useImage(baseUrl + mask_url)
   const [contour] = useImage(baseUrl + contour_url)
-  const [pointsInfo, setPointsInfo] = React.useState(
-    points_info.map((p, i) => {
-      return {
-        x: p.point[0],
-        y: p.point[1],
-        label: p.label,
-        stroke: color_map[p.label],
-        id: 'point-' + i
-      }
-    })
+  const [pointsInfo, setPointsInfo] = useState(
+    points_info.map((p, i) => ({
+      x: p.point[0],
+      y: p.point[1],
+      label: p.label,
+      stroke: color_map[p.label],
+      id: 'point-' + i
+    }))
   );
 
-  const [selectedId, setSelectedId] = React.useState<string | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [scale, setScale] = useState(1.0);
+  const updateTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
-  const [scale, setScale] = useState(1.0)
   useEffect(() => {
     const resizeCanvas = () => {
-      const scale_ratio = window.innerWidth / image_size[0]
-      setScale(Math.min(scale_ratio, 1.0))
-      Streamlit.setFrameHeight(image_size[1] * Math.min(scale_ratio, 1.0))
-    }
+      const scale_ratio = window.innerWidth / image_size[0];
+      setScale(Math.min(scale_ratio, 1.0));
+      Streamlit.setFrameHeight(image_size[1] * Math.min(scale_ratio, 1.0));
+    };
     window.addEventListener('resize', resizeCanvas);
-    resizeCanvas()
-  }, [image_size])
+    resizeCanvas();
+    return () => window.removeEventListener('resize', resizeCanvas);
+  }, [image_size]);
 
   useEffect(() => {
     const handleKeyPress = (event: KeyboardEvent) => {
-      if (use_space && event.key === ' ') { 
-        const currentPointsValue = pointsInfo.map((point, i) => {
-          return {
-            point: [point.x, point.y],
-            label_id: label_list.indexOf(point.label),
-            label: point.label
-          }
-        })
-        Streamlit.setComponentValue(currentPointsValue)
+      if (!selectedId) return;
+
+      const selectedPoint = pointsInfo.find(p => p.id === selectedId);
+      if (!selectedPoint) return;
+
+      const currentIndex = label_list.indexOf(selectedPoint.label);
+      let newLabel = selectedPoint.label;
+
+      // Delete Point (Backslash or Backspace)
+      if (event.key === "\\" || event.code === "Backslash" || event.code === "IntlBackslash" || event.key === "Backspace") {
+        setPointsInfo(prevPoints => prevPoints.filter(p => p.id !== selectedId));
+        setSelectedId(null);
+        return;
+      }
+
+      if (event.key === "Shift") {
+        newLabel = label_list[(currentIndex + 1) % label_list.length]; // Next label
+      }
+
+      if (newLabel !== selectedPoint.label) {
+        setPointsInfo(prevPoints =>
+          prevPoints.map(p =>
+            p.id === selectedId ? { ...p, label: newLabel, stroke: color_map[newLabel] } : p
+          )
+        );
       }
     };
-    window.addEventListener('keydown', handleKeyPress);
-    return () => {
-      window.removeEventListener('keydown', handleKeyPress);
-    };
-  }, [pointsInfo]); 
 
-  // This effect runs only when pointsInfo changes
+    window.addEventListener("keydown", handleKeyPress);
+    return () => {
+      window.removeEventListener("keydown", handleKeyPress);
+    };
+  }, [selectedId, pointsInfo]);
+
   useEffect(() => {
-    // Only set the component value when pointsInfo changes
-    const currentPointsValue = pointsInfo.map((point, i) => {
-      return {
+    if (updateTimeoutRef.current) {
+      clearTimeout(updateTimeoutRef.current);
+    }
+
+    updateTimeoutRef.current = setTimeout(() => {
+      const currentPointsValue = pointsInfo.map(point => ({
         point: [point.x, point.y],
         label_id: label_list.indexOf(point.label),
         label: point.label
-      }
-    })
-    Streamlit.setComponentValue(currentPointsValue)
-  }, [pointsInfo]); // Triggered when pointsInfo changes
+      }));
+      Streamlit.setComponentValue(currentPointsValue);
+    }, 1000); // Delay of 1 second
+  }, [pointsInfo]);
 
   return (
     <ChakraProvider>
@@ -114,10 +133,10 @@ const PointDet = ({ args, theme }: ComponentProps) => {
             <Box 
               width="100%" 
               style={{
-                overflow: 'auto',  // Scrollbars enabled if content overflows
-                maxWidth: '100%',  // Restrict width to avoid unnecessary scroll
-                maxHeight: '100vh', // Set the max height relative to the viewport
-                position: 'relative' // Needed for proper overflow control
+                overflow: 'auto',  
+                maxWidth: '100%',  
+                maxHeight: '100vh', 
+                position: 'relative' 
               }}
             >
               <PointCanvas
@@ -147,4 +166,4 @@ const PointDet = ({ args, theme }: ComponentProps) => {
   )
 }
 
-export default withStreamlitConnection(PointDet)
+export default withStreamlitConnection(PointDet);
